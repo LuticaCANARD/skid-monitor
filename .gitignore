@@ -1,0 +1,14 @@
+# Rust 빌드 산출물 (workspace 루트에 단일 target/)
+/target/
+
+# 디버그 심볼
+*.pdb
+
+# 환경/로컬 설정
+.env
+*.local
+
+# 에디터/OS
+.DS_Store
+.idea/
+*.swp
