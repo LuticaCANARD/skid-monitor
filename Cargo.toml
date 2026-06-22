@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = [
+    "interface",
+    "moniter-server",
+    "moniter-client",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+# 공유 라이브러리: client/server가 동일한 프로토콜·타입을 사용한다
+interface = { path = "interface" }
