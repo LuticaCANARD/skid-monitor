@@ -5,6 +5,18 @@
 mod receiver;
 mod view;
 
-fn main() {
-    println!("monitor-cat client starting...");
+fn main() -> std::io::Result<()> {
+    let addr = receiver::listen_addr();
+    println!("monitor-cat client listening on {addr}");
+
+    let receiver = receiver::Receiver::bind(&addr)?;
+    loop {
+        match receiver.recv() {
+            Ok(signal) => view::render(&signal),
+            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+                eprintln!("client connection closed before a complete signal arrived");
+            }
+            Err(err) => eprintln!("failed to receive signal: {err}"),
+        }
+    }
 }

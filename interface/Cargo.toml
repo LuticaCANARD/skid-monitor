@@ -9,3 +9,5 @@ name = "interface"
 path = "src/lib.rs"
 
 [dependencies]
+# 신호 타입을 TCP 경계 너머로 보내기 위한 직렬화. OTel 의존성은 두지 않는다(양쪽이 공유하는 가벼운 계약).
+serde = { workspace = true }

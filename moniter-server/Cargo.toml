@@ -5,3 +5,16 @@ edition.workspace = true
 
 [dependencies]
 interface.workspace = true
+
+# OpenTelemetry 자체 계측
+opentelemetry.workspace = true
+opentelemetry_sdk.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry-appender-tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+
+# Signal 직렬화 후 TCP 전송
+serde_json.workspace = true
