@@ -537,6 +537,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "moniter-edge-agent"
+version = "0.1.0"
+dependencies = [
+ "interface",
+ "serde_json",
+]
+
+[[package]]
 name = "moniter-server"
 version = "0.1.0"
 dependencies = [

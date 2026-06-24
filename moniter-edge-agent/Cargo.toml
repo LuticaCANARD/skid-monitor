@@ -1,0 +1,8 @@
+[package]
+name = "moniter-edge-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+interface.workspace = true
+serde_json.workspace = true

@@ -29,6 +29,10 @@ pub enum Source {
     OpenTelemetry,
     /// 쿠버네티스 인프라/시스템에서 온 값.
     Kubernetes,
+    /// 엣지 노드 주변의 MCU/센서/전원/네트워크 장비에서 온 물리 계층 신호.
+    EdgeDevice,
+    /// 클라우드 QPU 작업 상태, 결과 품질, 큐 상태 등 양자 컴퓨팅 백엔드에서 온 신호.
+    Quantum,
     /// 그 외 호스트 시스템 지표.
     System,
 }

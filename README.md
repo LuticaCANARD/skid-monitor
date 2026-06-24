@@ -1,1 +1,51 @@
 # Monitor-cat
+
+Monitor-cat은 애플리케이션, Kubernetes, 호스트, 엣지 물리 환경에서 발생하는 신호를
+하나의 가벼운 관측 프로토콜로 모으는 실험적 모니터링 도구다.
+
+현재 워크스페이스는 세 부분으로 나뉜다.
+
+- `interface`: server/client/edge adapter가 공유하는 직렬화 가능한 계약
+- `moniter-server`: OpenTelemetry 기반 신호를 수집해 `Signal`로 전송하는 agent
+- `moniter-edge-agent`: 엣지 물리 계층/환경 신호를 수집해 `Signal`로 전송하는 agent
+- `moniter-client`: `Signal`을 받아 사람이 볼 수 있게 표시하는 client
+
+## Edge physical signals
+
+STM32/ESP32 같은 MCU를 Kubernetes node로 취급하지 않는다. 대신 edge node 주변의
+물리 계층과 환경 신호를 관측하는 작은 probe/proxy로 둔다.
+
+예상 신호:
+
+- 전원: 입력 전압, 배터리 상태, brownout, PoE 상태
+- 열/환경: 온도, 습도, 팬 상태, enclosure 개폐
+- 네트워크: 링크 업/다운, RSSI, 패킷 손실, LoRa/Wi-Fi/Ethernet 상태
+- 장비 상태: watchdog reset, boot count, sensor fault, GPIO 상태
+
+이 신호들은 `interface::metrics::Source::EdgeDevice`로 표시하고, `device_id`,
+`node_name`, `sensor`, `rack`, `zone` 같은 attribute로 위치와 장비를 식별한다.
+초기 구현은 기존 length-prefixed JSON over TCP를 재사용하고, MCU 제약이 커지면
+CBOR/postcard 같은 compact encoding을 추가한다.
+
+현재 `moniter-edge-agent`는 실제 센서 대신 mock sample을 전송한다.
+
+```sh
+MONITOR_CAT_CLIENT_ADDR=127.0.0.1:9000 cargo run -p moniter-edge-agent -- --once
+```
+
+## Quantum telemetry
+
+"모든 것을 볼 수 있는 것"의 범위를 클라우드 양자 컴퓨팅 백엔드까지 넓힐 수 있다.
+다만 양자컴퓨터를 edge 장비처럼 직접 붙이는 것이 아니라, IBM Quantum, Amazon Braket,
+Azure Quantum 같은 서비스의 job/task API를 관측 소스로 연결한다.
+
+예상 신호:
+
+- QPU/backend 상태: online 여부, provider, backend name, qubit count
+- 큐/작업: queued/running/completed/failed, queue depth, wait time, run time
+- 실행 품질: shots, error mitigation 설정, result confidence, failure reason
+- 비용/할당량: task count, quota 사용량, provider별 billing 단서
+
+이 신호들은 `interface::metrics::Source::Quantum`으로 표시한다. 실제 quantum adapter는
+각 provider SDK나 API를 호출하는 별도 크레이트로 두고, monitor-cat 내부 계약에는
+provider별 타입을 직접 노출하지 않는다.

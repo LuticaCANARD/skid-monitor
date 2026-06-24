@@ -4,6 +4,7 @@ members = [
     "interface",
     "moniter-server",
     "moniter-client",
+    "moniter-edge-agent",
 ]
 
 [workspace.package]
