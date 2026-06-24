@@ -549,6 +549,7 @@ name = "moniter-server"
 version = "0.1.0"
 dependencies = [
  "interface",
+ "libc",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",

@@ -7,12 +7,14 @@
 //! 이를 `interface` 신호로 변환해 [`transport`]로 내보낸다.
 
 mod collector;
+mod device_socket;
+mod system_metrics;
 mod telemetry;
 mod transport;
 
 use interface::protocol::Signal;
 use std::time::Duration;
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 /// 수집 주기.
 const CYCLE_INTERVAL: Duration = Duration::from_secs(15);
@@ -22,10 +24,19 @@ async fn main() {
     let guard = telemetry::init();
     info!("monitor-cat server agent starting...");
 
+    if let Some(addr) = device_socket::listen_addr() {
+        tokio::spawn(async move {
+            if let Err(err) = device_socket::serve(addr).await {
+                warn!(%err, "observation device socket stopped");
+            }
+        });
+    }
+
+    let mut system_sampler = system_metrics::SystemSampler::new();
     let mut interval = tokio::time::interval(CYCLE_INTERVAL);
     loop {
         tokio::select! {
-            _ = interval.tick() => run_cycle(&guard).await,
+            _ = interval.tick() => run_cycle(&guard, &mut system_sampler).await,
             _ = tokio::signal::ctrl_c() => {
                 info!("shutdown signal received");
                 break;
@@ -41,9 +52,13 @@ async fn main() {
 ///
 /// `#[instrument]`로 이 함수 자체가 OTel span이 되고, 그 span은 다음 주기의 trace 수집에 잡힌다
 /// (self-observation).
-#[instrument(skip(guard))]
-async fn run_cycle(guard: &telemetry::TelemetryGuard) {
-    let metrics = collector::collect(guard);
+#[instrument(skip(guard, system_sampler))]
+async fn run_cycle(
+    guard: &telemetry::TelemetryGuard,
+    system_sampler: &mut system_metrics::SystemSampler,
+) {
+    let mut metrics = collector::collect(guard);
+    metrics.extend(system_sampler.collect());
     info!(count = metrics.len(), "collected metrics");
     transport::send(Signal::Metrics(metrics));
 

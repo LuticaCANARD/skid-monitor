@@ -1,6 +1,6 @@
 //! monitor-cat edge physical signal agent.
 //!
-//! Edge node 주변의 MCU/센서/전원/네트워크 상태를 `interface` 프로토콜로 client에 전송한다.
+//! Edge node 주변의 MCU/센서/전원/네트워크 상태를 `interface` 프로토콜로 server의 장비 소켓에 전송한다.
 //! 첫 구현은 실제 하드웨어 입력 대신 deterministic mock sample을 내보내며, 센서 읽기 계층은
 //! 나중에 ESP32/STM32/Linux gateway 구현으로 교체할 수 있게 작게 유지한다.
 
@@ -10,19 +10,19 @@ use std::io::Write;
 use std::net::TcpStream;
 use std::time::Duration;
 
-const DEFAULT_CLIENT_ADDR: &str = "127.0.0.1:9000";
+const DEFAULT_DEVICE_ADDR: &str = "127.0.0.1:9101";
 const DEFAULT_INTERVAL_SECS: u64 = 15;
 
 fn main() {
     let config = EdgeConfig::from_env();
     eprintln!(
-        "monitor-cat edge agent starting: device={} node={} client={}",
-        config.device_id, config.node_name, config.client_addr
+        "monitor-cat edge agent starting: device={} node={} server_device_socket={}",
+        config.device_id, config.node_name, config.device_addr
     );
 
     loop {
         let metrics = sample_edge_metrics(&config);
-        send(Signal::Metrics(metrics), &config.client_addr);
+        send(Signal::Metrics(metrics), &config.device_addr);
 
         if std::env::args().any(|arg| arg == "--once") {
             break;
@@ -33,7 +33,7 @@ fn main() {
 
 #[derive(Debug, Clone)]
 struct EdgeConfig {
-    client_addr: String,
+    device_addr: String,
     device_id: String,
     node_name: String,
     interval: Duration,
@@ -42,8 +42,9 @@ struct EdgeConfig {
 impl EdgeConfig {
     fn from_env() -> Self {
         Self {
-            client_addr: std::env::var("MONITOR_CAT_CLIENT_ADDR")
-                .unwrap_or_else(|_| DEFAULT_CLIENT_ADDR.to_string()),
+            device_addr: std::env::var("MONITOR_CAT_DEVICE_ADDR")
+                .or_else(|_| std::env::var("MONITOR_CAT_DEVICE_LISTEN_ADDR"))
+                .unwrap_or_else(|_| DEFAULT_DEVICE_ADDR.to_string()),
             device_id: std::env::var("MONITOR_CAT_EDGE_DEVICE_ID")
                 .unwrap_or_else(|_| "edge-dev-001".to_string()),
             node_name: std::env::var("MONITOR_CAT_EDGE_NODE")
@@ -159,7 +160,7 @@ mod tests {
 
     fn test_config() -> EdgeConfig {
         EdgeConfig {
-            client_addr: "127.0.0.1:9000".to_string(),
+            device_addr: "127.0.0.1:9101".to_string(),
             device_id: "dev-a".to_string(),
             node_name: "node-a".to_string(),
             interval: Duration::from_secs(1),
