@@ -3,7 +3,7 @@
 Monitor-cat은 애플리케이션, Kubernetes, 호스트, 엣지 물리 환경에서 발생하는 신호를
 하나의 가벼운 관측 프로토콜로 모으는 실험적 모니터링 도구다.
 
-현재 워크스페이스는 세 부분으로 나뉜다.
+현재 워크스페이스는 네 부분으로 나뉜다.
 
 - `interface`: server/client/edge adapter가 공유하는 직렬화 가능한 계약
 - `moniter-server`: OpenTelemetry 기반 신호를 수집해 `Signal`로 전송하는 agent
@@ -51,16 +51,22 @@ STM32/ESP32 같은 MCU를 Kubernetes node로 취급하지 않는다. 대신 edge
 - 네트워크: 링크 업/다운, RSSI, 패킷 손실, LoRa/Wi-Fi/Ethernet 상태
 - 장비 상태: watchdog reset, boot count, sensor fault, GPIO 상태
 
-이 신호들은 `interface::metrics::Source::EdgeDevice`로 표시하고, `device_id`,
-`node_name`, `sensor`, `rack`, `zone` 같은 attribute로 위치와 장비를 식별한다.
-초기 구현은 기존 length-prefixed JSON over TCP를 재사용하고, MCU 제약이 커지면
-CBOR/postcard 같은 compact encoding을 추가한다.
+이 신호들은 `interface::metrics::Source::EdgeDevice`로 표시한다. 현재 구현이 붙이는
+attribute는 `device_id`, `node_name`, `sensor`이며, `rack`, `zone` 같은 위치 attribute는
+향후 식별 모델의 목표값으로 아직 코드에 없다. 초기 구현은 기존 length-prefixed JSON over
+TCP를 재사용한다. CBOR/postcard 같은 compact encoding은 실제로 펌웨어에 직접 올리는 probe가
+생기거나 대역폭 제약이 측정될 때 추가한다(현재 edge agent는 Linux 위 Rust 바이너리다).
 
 현재 `moniter-edge-agent`는 실제 센서 대신 mock sample을 server 장비 소켓으로 전송한다.
 
 ```sh
 MONITOR_CAT_DEVICE_ADDR=127.0.0.1:9101 cargo run -p moniter-edge-agent -- --once
 ```
+
+`moniter-edge-agent`는 `moniter-server`와 별도로 배포되는 현장 probe이며, server의 장비
+소켓으로 edge 신호를 push한다. 운영 배포는 단일 바이너리와 systemd 서비스를 기본값으로
+두며, 자세한 관계와 설치 전략은 [edge agent deployment](docs/edge-agent-deployment.md)를
+따른다.
 
 ## Quantum telemetry
 
