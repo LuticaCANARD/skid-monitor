@@ -32,6 +32,7 @@ pub struct TelemetryGuard {
     pub metric_exporter: InMemoryMetricExporter,
     pub span_exporter: InMemorySpanExporter,
     pub log_exporter: InMemoryLogExporter,
+    pub resource: Resource,
     pub meter_provider: SdkMeterProvider,
     pub tracer_provider: SdkTracerProvider,
     pub logger_provider: SdkLoggerProvider,
@@ -78,7 +79,7 @@ pub fn init() -> TelemetryGuard {
     // --- logs: in-memory batch exporter (+ 옵션 OTLP batch exporter) ---
     let log_exporter = InMemoryLogExporter::default();
     let mut logger_builder = SdkLoggerProvider::builder()
-        .with_resource(resource)
+        .with_resource(resource.clone())
         .with_batch_exporter(log_exporter.clone());
     if otlp_on {
         let otlp_logs = opentelemetry_otlp::LogExporter::builder()
@@ -111,6 +112,7 @@ pub fn init() -> TelemetryGuard {
         metric_exporter,
         span_exporter,
         log_exporter,
+        resource,
         meter_provider,
         tracer_provider,
         logger_provider,

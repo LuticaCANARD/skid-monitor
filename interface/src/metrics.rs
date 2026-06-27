@@ -1,16 +1,25 @@
-//! 수집되는 모니터링 데이터의 타입 정의.
+//! 수집되는 간단 metric 표본과 OTLP 변환 헬퍼.
 //!
-//! server agent가 OpenTelemetry / k8s 인프라 등에서 수집한 값을 이 타입들로 표현한다.
-//! server와 client는 TCP 경계로 나뉠 수 있으므로 모든 타입은 serde로 직렬화 가능하다.
+//! server-client 경계의 실제 payload는 OTLP `ExportMetricsServiceRequest`다.
+//! 이 모듈의 [`Metric`]은 system/edge처럼 SDK aggregator를 거치지 않는 값들을
+//! OTLP number data point로 감싸기 위한 작은 입력 타입이다.
 
+use crate::otlp::ExportMetricsServiceRequest;
+use crate::otlp::tonic::common::v1::{AnyValue, InstrumentationScope, KeyValue, any_value};
+use crate::otlp::tonic::metrics::v1::{
+    AggregationTemporality, Gauge, Histogram, HistogramDataPoint, Metric as OtlpMetric,
+    NumberDataPoint, ResourceMetrics, ScopeMetrics, Sum, metric, number_data_point,
+};
+use crate::otlp::tonic::resource::v1::Resource;
 use serde::{Deserialize, Serialize};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// 단일 측정 표본.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Metric {
     /// 측정 이름 (예: "cpu.usage", "pod.restart_count").
     pub name: String,
-    /// 측정 값. 히스토그램 등 복합 집계는 대표값(sum 등)으로 평탄화한다.
+    /// 측정 값. SDK aggregator를 거치지 않은 단일 표본 값이다.
     pub value: f64,
     /// 측정이 발생한 출처.
     pub source: Source,
@@ -23,7 +32,7 @@ pub struct Metric {
 }
 
 /// 측정이 발생한 출처 구분.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Source {
     /// OpenTelemetry 계측에서 온 값.
     OpenTelemetry,
@@ -37,15 +46,181 @@ pub enum Source {
     System,
 }
 
+impl Source {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::OpenTelemetry => "opentelemetry",
+            Source::Kubernetes => "kubernetes",
+            Source::EdgeDevice => "edge_device",
+            Source::Quantum => "quantum",
+            Source::System => "system",
+        }
+    }
+}
+
 /// 메트릭 집계 종류.
 ///
-/// 히스토그램은 단일 `f64`로 표현하기 위해 대표값(sum)으로 평탄화하며, 버킷 정보는 손실된다.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// SDK aggregator를 거치지 않은 간단 표본의 집계 종류.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum MetricKind {
     /// 현재 값 측정.
     Gauge,
     /// 누적 합계.
     Sum,
-    /// 분포 측정(대표값으로 평탄화됨).
+    /// 단일 표본을 담은 히스토그램.
     Histogram,
+}
+
+/// SDK aggregator를 거치지 않은 metric 표본을 OTLP Metrics export request로 변환한다.
+pub fn export_metrics(
+    metrics: Vec<Metric>,
+    service_name: &str,
+    scope_name: &str,
+) -> ExportMetricsServiceRequest {
+    if metrics.is_empty() {
+        return ExportMetricsServiceRequest {
+            resource_metrics: Vec::new(),
+        };
+    }
+
+    let time_unix_nano = unix_nanos(SystemTime::now());
+    let mut groups: Vec<(Source, Vec<Metric>)> = Vec::new();
+    for metric in metrics {
+        if let Some((_, grouped)) = groups
+            .iter_mut()
+            .find(|(source, _)| *source == metric.source)
+        {
+            grouped.push(metric);
+        } else {
+            groups.push((metric.source, vec![metric]));
+        }
+    }
+
+    ExportMetricsServiceRequest {
+        resource_metrics: groups
+            .into_iter()
+            .map(|(source, metrics)| {
+                resource_metrics(source, metrics, service_name, scope_name, time_unix_nano)
+            })
+            .collect(),
+    }
+}
+
+fn resource_metrics(
+    source: Source,
+    metrics: Vec<Metric>,
+    service_name: &str,
+    scope_name: &str,
+    time_unix_nano: u64,
+) -> ResourceMetrics {
+    ResourceMetrics {
+        resource: Some(Resource {
+            attributes: key_values([
+                ("service.name".to_string(), service_name.to_string()),
+                (
+                    "monitor_cat.source".to_string(),
+                    source.as_str().to_string(),
+                ),
+            ]),
+            dropped_attributes_count: 0,
+            entity_refs: Vec::new(),
+        }),
+        scope_metrics: vec![ScopeMetrics {
+            scope: Some(InstrumentationScope {
+                name: scope_name.to_string(),
+                version: String::new(),
+                attributes: Vec::new(),
+                dropped_attributes_count: 0,
+            }),
+            metrics: metrics
+                .into_iter()
+                .map(|metric| otlp_metric(metric, time_unix_nano))
+                .collect(),
+            schema_url: String::new(),
+        }],
+        schema_url: String::new(),
+    }
+}
+
+fn otlp_metric(metric: Metric, time_unix_nano: u64) -> OtlpMetric {
+    let name = metric.name;
+    let unit = metric.unit.unwrap_or_default();
+    let kind = metric.kind;
+    let value = metric.value;
+    let attributes = key_values(metric.attributes);
+    OtlpMetric {
+        name,
+        description: String::new(),
+        unit,
+        metadata: Vec::new(),
+        data: Some(match kind {
+            MetricKind::Gauge => metric::Data::Gauge(Gauge {
+                data_points: vec![number_data_point(attributes, value, 0, time_unix_nano)],
+            }),
+            MetricKind::Sum => metric::Data::Sum(Sum {
+                data_points: vec![number_data_point(
+                    attributes,
+                    value,
+                    time_unix_nano,
+                    time_unix_nano,
+                )],
+                aggregation_temporality: AggregationTemporality::Cumulative as i32,
+                is_monotonic: true,
+            }),
+            MetricKind::Histogram => metric::Data::Histogram(Histogram {
+                data_points: vec![HistogramDataPoint {
+                    attributes,
+                    start_time_unix_nano: time_unix_nano,
+                    time_unix_nano,
+                    count: 1,
+                    sum: Some(value),
+                    bucket_counts: Vec::new(),
+                    explicit_bounds: Vec::new(),
+                    exemplars: Vec::new(),
+                    flags: 0,
+                    min: Some(value),
+                    max: Some(value),
+                }],
+                aggregation_temporality: AggregationTemporality::Cumulative as i32,
+            }),
+        }),
+    }
+}
+
+fn number_data_point(
+    attributes: Vec<KeyValue>,
+    value: f64,
+    start_time_unix_nano: u64,
+    time_unix_nano: u64,
+) -> NumberDataPoint {
+    NumberDataPoint {
+        attributes,
+        start_time_unix_nano,
+        time_unix_nano,
+        exemplars: Vec::new(),
+        flags: 0,
+        value: Some(number_data_point::Value::AsDouble(value)),
+    }
+}
+
+fn key_values(attributes: impl IntoIterator<Item = (String, String)>) -> Vec<KeyValue> {
+    let mut out = Vec::new();
+    for (key, value) in attributes {
+        if out.iter().any(|existing: &KeyValue| existing.key == key) {
+            continue;
+        }
+        out.push(KeyValue {
+            key,
+            value: Some(AnyValue {
+                value: Some(any_value::Value::StringValue(value)),
+            }),
+        });
+    }
+    out
+}
+
+fn unix_nanos(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_nanos() as u64
 }

@@ -4,7 +4,7 @@
 //! 첫 구현은 실제 하드웨어 입력 대신 deterministic mock sample을 내보내며, 센서 읽기 계층은
 //! 나중에 ESP32/STM32/Linux gateway 구현으로 교체할 수 있게 작게 유지한다.
 
-use interface::metrics::{Metric, MetricKind, Source};
+use interface::metrics::{Metric, MetricKind, Source, export_metrics};
 use interface::protocol::Signal;
 use std::io::Write;
 use std::net::TcpStream;
@@ -22,7 +22,14 @@ fn main() {
 
     loop {
         let metrics = sample_edge_metrics(&config);
-        send(Signal::Metrics(metrics), &config.device_addr);
+        send(
+            Signal::Metrics(export_metrics(
+                metrics,
+                "monitor-cat-edge-agent",
+                "monitor-cat-edge",
+            )),
+            &config.device_addr,
+        );
 
         if std::env::args().any(|arg| arg == "--once") {
             break;

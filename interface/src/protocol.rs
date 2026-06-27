@@ -2,20 +2,20 @@
 //!
 //! server는 [`Signal`]을 보내고, client는 이를 수신해 사용자에게 보여준다.
 //! server/client는 TCP 경계로 나뉠 수 있으므로 [`Signal`]은 serde로 직렬화 가능하다.
+//! 각 텔레메트리 payload는 OTLP `Export*ServiceRequest` protobuf 모델을 그대로 사용한다.
 
-use crate::metrics::Metric;
-use crate::telemetry::{LogRecord, TraceSpan};
+use crate::otlp::{
+    ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest,
+};
 use serde::{Deserialize, Serialize};
 
 /// server agent가 client로 전송하는 신호.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Signal {
-    /// 주기적으로 수집된 지표 묶음.
-    Metrics(Vec<Metric>),
-    /// 완료된 트레이스 span 묶음.
-    Traces(Vec<TraceSpan>),
-    /// 로그 레코드 묶음.
-    Logs(Vec<LogRecord>),
-    /// 임계치 초과 등 즉시 알려야 하는 경보.
-    Alert { message: String },
+    /// OTLP metrics export request.
+    Metrics(ExportMetricsServiceRequest),
+    /// OTLP traces export request.
+    Traces(ExportTraceServiceRequest),
+    /// OTLP logs export request.
+    Logs(ExportLogsServiceRequest),
 }

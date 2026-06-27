@@ -58,18 +58,22 @@ fn read_signal(reader: &mut impl Read) -> io::Result<Signal> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use interface::metrics::{Metric, MetricKind, Source};
+    use interface::metrics::{Metric, MetricKind, Source, export_metrics};
 
     #[test]
     fn reads_length_prefixed_signal() {
-        let signal = Signal::Metrics(vec![Metric {
-            name: "cpu.usage".to_string(),
-            value: 42.0,
-            source: Source::System,
-            unit: Some("%".to_string()),
-            kind: MetricKind::Gauge,
-            attributes: vec![("host".to_string(), "local".to_string())],
-        }]);
+        let signal = Signal::Metrics(export_metrics(
+            vec![Metric {
+                name: "cpu.usage".to_string(),
+                value: 42.0,
+                source: Source::System,
+                unit: Some("%".to_string()),
+                kind: MetricKind::Gauge,
+                attributes: vec![("host".to_string(), "local".to_string())],
+            }],
+            "test-service",
+            "test-scope",
+        ));
         let payload = serde_json::to_vec(&signal).unwrap();
         let mut frame = Vec::new();
         frame.extend_from_slice(&(payload.len() as u32).to_be_bytes());
@@ -77,18 +81,20 @@ mod tests {
 
         let decoded = read_signal(&mut frame.as_slice()).unwrap();
         match decoded {
-            Signal::Metrics(metrics) => {
-                assert_eq!(metrics.len(), 1);
-                assert_eq!(metrics[0].name, "cpu.usage");
+            Signal::Metrics(request) => {
+                let metric = &request.resource_metrics[0].scope_metrics[0].metrics[0];
+                assert_eq!(metric.name, "cpu.usage");
             }
-            other => panic!("unexpected signal: {other:?}"),
+            _ => panic!("unexpected signal"),
         }
     }
 
     #[test]
     fn rejects_oversized_frame() {
         let frame = (MAX_FRAME_BYTES + 1).to_be_bytes().to_vec();
-        let err = read_signal(&mut frame.as_slice()).unwrap_err();
+        let result = read_signal(&mut frame.as_slice());
+        assert!(result.is_err());
+        let err = result.err().unwrap();
 
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }

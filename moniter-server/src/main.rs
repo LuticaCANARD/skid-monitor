@@ -13,6 +13,10 @@ mod telemetry;
 mod transport;
 
 use interface::protocol::Signal;
+use interface::{
+    metrics::export_metrics,
+    otlp::{ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest},
+};
 use std::time::Duration;
 use tracing::{info, instrument, warn};
 
@@ -58,13 +62,49 @@ async fn run_cycle(
     system_sampler: &mut system_metrics::SystemSampler,
 ) {
     let mut metrics = collector::collect(guard);
-    metrics.extend(system_sampler.collect());
-    info!(count = metrics.len(), "collected metrics");
+    let system_metrics = export_metrics(
+        system_sampler.collect(),
+        "monitor-cat-server",
+        "monitor-cat-system",
+    );
+    metrics
+        .resource_metrics
+        .extend(system_metrics.resource_metrics);
+    info!(count = metric_count(&metrics), "collected metrics");
     transport::send(Signal::Metrics(metrics));
 
     let spans = collector::collect_spans(guard);
+    info!(count = span_count(&spans), "collected spans");
     transport::send(Signal::Traces(spans));
 
     let logs = collector::collect_logs(guard);
+    info!(count = log_count(&logs), "collected logs");
     transport::send(Signal::Logs(logs));
+}
+
+fn metric_count(request: &ExportMetricsServiceRequest) -> usize {
+    request
+        .resource_metrics
+        .iter()
+        .flat_map(|rm| &rm.scope_metrics)
+        .map(|sm| sm.metrics.len())
+        .sum()
+}
+
+fn span_count(request: &ExportTraceServiceRequest) -> usize {
+    request
+        .resource_spans
+        .iter()
+        .flat_map(|rs| &rs.scope_spans)
+        .map(|ss| ss.spans.len())
+        .sum()
+}
+
+fn log_count(request: &ExportLogsServiceRequest) -> usize {
+    request
+        .resource_logs
+        .iter()
+        .flat_map(|rl| &rl.scope_logs)
+        .map(|sl| sl.log_records.len())
+        .sum()
 }

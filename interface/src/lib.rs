@@ -7,5 +7,5 @@
 //! - client는 동일한 [`protocol`] 메시지를 수신해 정보를 해석·표시한다.
 
 pub mod metrics;
+pub mod otlp;
 pub mod protocol;
-pub mod telemetry;

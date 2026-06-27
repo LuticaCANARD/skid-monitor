@@ -5,6 +5,9 @@
 //! The server forwards accepted signals to the configured monitor-cat client.
 
 use crate::transport;
+use interface::otlp::{
+    ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest,
+};
 use interface::protocol::Signal;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
@@ -43,13 +46,39 @@ pub async fn serve(addr: String) -> std::io::Result<()> {
 async fn handle_connection(mut stream: TcpStream) -> std::io::Result<()> {
     let signal = read_signal(&mut stream).await?;
     match &signal {
-        Signal::Metrics(metrics) => info!(count = metrics.len(), "received device metrics"),
-        Signal::Traces(spans) => info!(count = spans.len(), "received device traces"),
-        Signal::Logs(logs) => info!(count = logs.len(), "received device logs"),
-        Signal::Alert { message } => info!(%message, "received device alert"),
+        Signal::Metrics(metrics) => info!(count = metric_count(metrics), "received device metrics"),
+        Signal::Traces(spans) => info!(count = span_count(spans), "received device traces"),
+        Signal::Logs(logs) => info!(count = log_count(logs), "received device logs"),
     }
     transport::send(signal);
     Ok(())
+}
+
+fn metric_count(request: &ExportMetricsServiceRequest) -> usize {
+    request
+        .resource_metrics
+        .iter()
+        .flat_map(|rm| &rm.scope_metrics)
+        .map(|sm| sm.metrics.len())
+        .sum()
+}
+
+fn span_count(request: &ExportTraceServiceRequest) -> usize {
+    request
+        .resource_spans
+        .iter()
+        .flat_map(|rs| &rs.scope_spans)
+        .map(|ss| ss.spans.len())
+        .sum()
+}
+
+fn log_count(request: &ExportLogsServiceRequest) -> usize {
+    request
+        .resource_logs
+        .iter()
+        .flat_map(|rl| &rl.scope_logs)
+        .map(|sl| sl.log_records.len())
+        .sum()
 }
 
 async fn read_signal(stream: &mut TcpStream) -> std::io::Result<Signal> {
