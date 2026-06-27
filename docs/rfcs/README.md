@@ -5,13 +5,19 @@ Skid Monitor의 구조적 결정과 운영 계약을 기록한다.
 ## Umbrella Rule
 
 `skid-monitor`는 SKID 계열 실험을 합치는 canonical integration repository다. 다른 `skid-*`
-repository는 조사와 설계의 source로만 취급하고, 채택할 기능은 먼저 이 RFC 목록에 기록한다.
-실제 구현은 이 repository 안에서만 진행한다.
+repository는 조사와 설계의 source로만 취급하고, 채택할 기능은 먼저 RFC에 기록한다. 실제 구현은 이
+repository 안에서만 진행한다.
 
-| RFC | Status | Title |
-| --- | --- | --- |
-| [0001](0001-edge-capability-node-deployment.md) | Draft | Edge and Capability Node Deployment |
-| [0002](0002-node-config-and-transport-planes.md) | Draft | Node Configuration and Transport Planes |
-| [0003](0003-device-ingress-framing-and-safety.md) | Draft | Device Ingress Framing and Safety |
-| [0004](0004-compute-workload-probes-and-route-advice.md) | Draft | Compute Workload Probes and Route Advice |
-| [0005](0005-stream-telemetry-and-media-preview.md) | Draft | Stream Telemetry and Media Preview |
+## Index
+
+Status 범례: Draft = 설계 합의 중인 forward-looking 문서로 코드를 권위로 삼지 않으며 구현 정합
+검증 대상이 아니다. Accepted = 설계가 고정된 문서. Superseded = 후속 RFC로 대체된 문서.
+
+| RFC | Status | Title | Scope |
+| --- | --- | --- | --- |
+| [0001](0001-initial-skid-monitor-integration.md) | Draft | Initial Skid Monitor Integration | 배포, 설정, device frame, compute probe, stream telemetry |
+
+## Notes
+
+초기 설계는 하나의 RFC 0001을 정준 출처로 삼는다. source/as_str/node kind 매핑, 환경변수, metric
+명명 규칙, framing 상한도 모두 RFC 0001 안의 Canonical Terms 절에서 관리한다.

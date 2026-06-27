@@ -16,14 +16,12 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 - `skid-monitor-client`: `Signal`을 받아 콘솔에 표시하고 C# 확장 호스트로 전달하는 client
 - `skid-monitor-client/bindings/dotnet/`: 별도 SDK 라이브러리, out-of-process .NET extension host, sample extension
 
-배포 경계와 Kubernetes 운용 판단은 [RFC 0001: Edge and Capability Node Deployment](docs/rfcs/0001-edge-capability-node-deployment.md)를 따른다.
+배포 경계, 설정/transport, device ingress frame, compute advisor, stream telemetry의 초기 결정은
+[RFC 0001: Initial Skid Monitor Integration](docs/rfcs/0001-initial-skid-monitor-integration.md)를 따른다.
 클라이언트 UI와 C# extension 개발 방향은 [skid-monitor-client/docs](skid-monitor-client/docs/README.md)에 둔다.
 
-다른 SKID 계열 repository에서 가져온 설계 후보는 RFC로 고정한다. `skid-node`의 설정/transport plane은
-[RFC 0002](docs/rfcs/0002-node-config-and-transport-planes.md), device ingress frame은
-[RFC 0003](docs/rfcs/0003-device-ingress-framing-and-safety.md), GPU/image workload 기반 compute
-advisor는 [RFC 0004](docs/rfcs/0004-compute-workload-probes-and-route-advice.md), stream telemetry는
-[RFC 0005](docs/rfcs/0005-stream-telemetry-and-media-preview.md)를 따른다.
+다른 SKID 계열 repository에서 가져온 설계 후보도 먼저 RFC 0001에 통합해 정준 계약을 고정한 뒤,
+필요할 때 후속 RFC로 분리한다.
 
 ## Server Metrics
 
