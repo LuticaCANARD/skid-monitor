@@ -95,7 +95,7 @@ cargo run -p skid-monitor-client
 ```
 
 확장 SDK, host, 런타임 sidecar 모델은 [skid-monitor-client/bindings/dotnet/README.md](skid-monitor-client/bindings/dotnet/README.md)와
-[client RFC](skid-monitor-client/docs/rfcs/0001-csharp-extension-developer-experience.md)을 따른다.
+[client RFC](skid-monitor-client/docs/rfcs/0002-csharp-extension-developer-experience.md)을 따른다.
 
 ## Planned Nodes
 
@@ -103,7 +103,8 @@ cargo run -p skid-monitor-client
 `rsync`, local directory backend는 구현 세부 driver로 두고, client에는 안전하게 받을 수 있는
 파일 offer를 노출한다.
 
-현재 진입점은 실제 전송을 열지 않고 root별 파일 수/용량/가용성 metric만 장비 소켓으로 보낸다.
+현재 진입점은 전송 구현 전 단계로 root별 파일 수/용량/가용성 metric만 장비 소켓으로 보낸다. 제품
+범위에는 client가 offer를 보고 server 경유로 read-only chunk download를 요청하는 흐름이 포함된다.
 
 ```sh
 SKID_MONITOR_DEVICE_ADDR=127.0.0.1:9101 \

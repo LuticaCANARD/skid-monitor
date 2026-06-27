@@ -1,10 +1,10 @@
-# Client RFC 0002: skid-monitor-client Crate Role
+# Client RFC 0001: skid-monitor-client Crate Role
 
 | 항목 | 값 |
 | --- | --- |
 | Status | Draft |
 | Created | 2026-06-27 |
-| File | `skid-monitor-client/docs/rfcs/0002-crate-role.md` |
+| File | `skid-monitor-client/docs/rfcs/0001-crate-role.md` |
 | Scope | `skid-monitor-client` |
 | Decision Type | Client receiver, renderer, extension boundary |
 
@@ -17,6 +17,8 @@
 
 - `SKID_MONITOR_CLIENT_ADDR`에서 length-prefixed JSON `Signal`을 수신한다.
 - metrics, traces, logs를 사람이 읽을 수 있는 console text로 렌더링한다.
+- file offer를 사용자에게 보여주고, 허용된 read-only download 요청을 agent/server로 보낼 수 있는
+  client surface를 제공한다.
 - `SKID_MONITOR_EXTENSION_HOST`가 있으면 child process를 띄운다.
 - `SKID_MONITOR_DOTNET_EXTENSIONS`가 가리키는 extension assembly가 signal event를 받을 수 있게 한다.
 
@@ -27,9 +29,10 @@
 
 ## Boundaries
 
-client는 monitor data consumer다. host metric 수집, device socket listen, file transfer, compute
-execution은 담당하지 않는다. rich UI, Unity/VRM bridge, WebGPU preview는 extension 또는 future GUI
-layer에서 다룬다.
+client는 monitor data consumer이자 사용자 요청의 시작점이다. host metric 수집, device socket listen,
+file chunk serving, compute execution은 담당하지 않는다. file download는 client가 요청을 시작하지만
+agent/server와 `skid-file-node`가 권한 확인과 실제 chunk 제공을 담당한다. rich UI, Unity/VRM bridge,
+WebGPU preview는 extension 또는 future GUI layer에서 다룬다.
 
 ## Non-Goals
 
@@ -40,5 +43,6 @@ layer에서 다룬다.
 ## Open Questions
 
 - multiple agent를 동시에 받을 때 receiver concurrency를 어떻게 둘지.
+- file offer/download UI를 core console에 둘지 extension/GUI layer로 둘지.
 - stream preview endpoint를 core console에 얼마나 노출할지.
 - extension backpressure와 timeout을 client process가 어디까지 강제할지.

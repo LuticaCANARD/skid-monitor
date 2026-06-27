@@ -1,10 +1,10 @@
-# Client RFC 0001: C# Extension Developer Experience
+# Client RFC 0002: C# Extension Developer Experience
 
 | 항목 | 값 |
 | --- | --- |
 | Status | Draft |
 | Created | 2026-06-27 |
-| File | `skid-monitor-client/docs/rfcs/0001-csharp-extension-developer-experience.md` |
+| File | `skid-monitor-client/docs/rfcs/0002-csharp-extension-developer-experience.md` |
 | Scope | `skid-monitor-client`, `skid-monitor-client/bindings/dotnet` |
 | Protocol | newline-delimited JSON events over extension host stdin |
 | Decision Type | Client extension API, C# developer workflow, Unity bridge |
