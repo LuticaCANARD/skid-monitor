@@ -1,6 +1,10 @@
 # Rust 빌드 산출물 (workspace 루트에 단일 target/)
 /target/
 
+# .NET 빌드 산출물
+**/bin/
+**/obj/
+
 # 디버그 심볼
 *.pdb
 

@@ -1,11 +1,11 @@
-//! monitor-cat edge physical signal agent.
+//! skid-monitor edge physical signal agent.
 //!
-//! Edge node 주변의 MCU/센서/전원/네트워크 상태를 `interface` 프로토콜로 server의 장비 소켓에 전송한다.
+//! Edge node 주변의 MCU/센서/전원/네트워크 상태를 `skid_protocol` 프로토콜로 server의 장비 소켓에 전송한다.
 //! 첫 구현은 실제 하드웨어 입력 대신 deterministic mock sample을 내보내며, 센서 읽기 계층은
 //! 나중에 ESP32/STM32/Linux gateway 구현으로 교체할 수 있게 작게 유지한다.
 
-use interface::metrics::{Metric, MetricKind, Source, export_metrics};
-use interface::protocol::Signal;
+use skid_protocol::metrics::{Metric, MetricKind, Source, export_metrics};
+use skid_protocol::protocol::Signal;
 use std::io::Write;
 use std::net::TcpStream;
 use std::time::Duration;
@@ -16,7 +16,7 @@ const DEFAULT_INTERVAL_SECS: u64 = 15;
 fn main() {
     let config = EdgeConfig::from_env();
     eprintln!(
-        "monitor-cat edge agent starting: device={} node={} server_device_socket={}",
+        "skid-monitor edge agent starting: device={} node={} server_device_socket={}",
         config.device_id, config.node_name, config.device_addr
     );
 
@@ -25,8 +25,8 @@ fn main() {
         send(
             Signal::Metrics(export_metrics(
                 metrics,
-                "monitor-cat-edge-agent",
-                "monitor-cat-edge",
+                "skid-edge-agent",
+                "skid-monitor-edge",
             )),
             &config.device_addr,
         );
@@ -49,22 +49,34 @@ struct EdgeConfig {
 impl EdgeConfig {
     fn from_env() -> Self {
         Self {
-            device_addr: std::env::var("MONITOR_CAT_DEVICE_ADDR")
-                .or_else(|_| std::env::var("MONITOR_CAT_DEVICE_LISTEN_ADDR"))
+            device_addr: env_or_legacy("SKID_MONITOR_DEVICE_ADDR", "MONITOR_CAT_DEVICE_ADDR")
+                .or_else(|_| {
+                    env_or_legacy(
+                        "SKID_MONITOR_DEVICE_LISTEN_ADDR",
+                        "MONITOR_CAT_DEVICE_LISTEN_ADDR",
+                    )
+                })
                 .unwrap_or_else(|_| DEFAULT_DEVICE_ADDR.to_string()),
-            device_id: std::env::var("MONITOR_CAT_EDGE_DEVICE_ID")
+            device_id: env_or_legacy("SKID_MONITOR_EDGE_DEVICE_ID", "MONITOR_CAT_EDGE_DEVICE_ID")
                 .unwrap_or_else(|_| "edge-dev-001".to_string()),
-            node_name: std::env::var("MONITOR_CAT_EDGE_NODE")
+            node_name: env_or_legacy("SKID_MONITOR_EDGE_NODE", "MONITOR_CAT_EDGE_NODE")
                 .unwrap_or_else(|_| "edge-node".to_string()),
             interval: Duration::from_secs(
-                std::env::var("MONITOR_CAT_EDGE_INTERVAL_SECS")
-                    .ok()
-                    .and_then(|value| value.parse().ok())
-                    .filter(|seconds| *seconds > 0)
-                    .unwrap_or(DEFAULT_INTERVAL_SECS),
+                env_or_legacy(
+                    "SKID_MONITOR_EDGE_INTERVAL_SECS",
+                    "MONITOR_CAT_EDGE_INTERVAL_SECS",
+                )
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .filter(|seconds| *seconds > 0)
+                .unwrap_or(DEFAULT_INTERVAL_SECS),
             ),
         }
     }
+}
+
+fn env_or_legacy(primary: &str, legacy: &str) -> Result<String, std::env::VarError> {
+    std::env::var(primary).or_else(|_| std::env::var(legacy))
 }
 
 fn sample_edge_metrics(config: &EdgeConfig) -> Vec<Metric> {

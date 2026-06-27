@@ -1,11 +1,11 @@
 [package]
-name = "interface"
+name = "skid-protocol"
 version.workspace = true
 edition.workspace = true
 
 # 라이브러리 크레이트: client와 server가 공유하는 프로토콜과 데이터 타입을 제공한다.
 [lib]
-name = "interface"
+name = "skid_protocol"
 path = "src/lib.rs"
 
 [dependencies]

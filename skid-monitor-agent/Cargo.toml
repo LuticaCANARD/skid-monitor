@@ -1,10 +1,10 @@
 [package]
-name = "moniter-server"
+name = "skid-monitor-agent"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-interface.workspace = true
+skid-protocol.workspace = true
 
 # OpenTelemetry 자체 계측
 opentelemetry.workspace = true

@@ -1,8 +1,9 @@
 [package]
-name = "moniter-edge-agent"
+name = "skid-monitor-client"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-interface.workspace = true
+skid-protocol.workspace = true
+serde.workspace = true
 serde_json.workspace = true

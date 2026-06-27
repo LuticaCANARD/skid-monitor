@@ -118,7 +118,7 @@ fn resource_metrics(
             attributes: key_values([
                 ("service.name".to_string(), service_name.to_string()),
                 (
-                    "monitor_cat.source".to_string(),
+                    "skid_monitor.source".to_string(),
                     source.as_str().to_string(),
                 ),
             ]),

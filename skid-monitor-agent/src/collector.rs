@@ -1,25 +1,25 @@
 //! 정보 수집 계층.
 //!
 //! server 자신을 OpenTelemetry로 계측해 만든 metrics/traces/logs를, in-memory exporter에서 읽어
-//! [`interface`] 타입으로 변환한다. 읽기 전 해당 provider를 `force_flush`해서 배치 워커가 모인
+//! [`skid_protocol`] 타입으로 변환한다. 읽기 전 해당 provider를 `force_flush`해서 배치 워커가 모인
 //! 신호를 exporter로 내보내게 한 뒤 수집하고, exporter를 reset 한다.
 
 use crate::telemetry::TelemetryGuard;
-use interface::otlp::{
-    ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest,
-};
 use opentelemetry::global;
 use opentelemetry::metrics::Counter;
 use opentelemetry_proto::transform::common::tonic::ResourceAttributesWithSchema;
 use opentelemetry_proto::transform::logs::tonic::group_logs_by_resource_and_scope;
 use opentelemetry_proto::transform::trace::tonic::group_spans_by_resource_and_scope;
 use opentelemetry_sdk::logs::LogBatch;
+use skid_protocol::otlp::{
+    ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest,
+};
 use std::sync::LazyLock;
 
 /// 수집 주기 횟수 카운터 (server 자체 계측 표본의 예시).
 static CYCLE_COUNTER: LazyLock<Counter<u64>> = LazyLock::new(|| {
-    global::meter("monitor-cat-server")
-        .u64_counter("monitor_cat.collect.cycles")
+    global::meter("skid-monitor-agent")
+        .u64_counter("skid_monitor.collect.cycles")
         .with_description("collector::collect 호출 횟수")
         .build()
 });

@@ -458,14 +458,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "interface"
-version = "0.1.0"
-dependencies = [
- "opentelemetry-proto",
- "serde",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -554,40 +546,6 @@ dependencies = [
  "libc",
  "wasi",
  "windows-sys",
-]
-
-[[package]]
-name = "moniter-client"
-version = "0.1.0"
-dependencies = [
- "interface",
- "serde_json",
-]
-
-[[package]]
-name = "moniter-edge-agent"
-version = "0.1.0"
-dependencies = [
- "interface",
- "serde_json",
-]
-
-[[package]]
-name = "moniter-server"
-version = "0.1.0"
-dependencies = [
- "interface",
- "libc",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-proto",
- "opentelemetry_sdk",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1029,6 +987,49 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "skid-edge-agent"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "skid-protocol",
+]
+
+[[package]]
+name = "skid-monitor-agent"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry-proto",
+ "opentelemetry_sdk",
+ "serde_json",
+ "skid-protocol",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "skid-monitor-client"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "skid-protocol",
+]
+
+[[package]]
+name = "skid-protocol"
+version = "0.1.0"
+dependencies = [
+ "opentelemetry-proto",
+ "serde",
 ]
 
 [[package]]

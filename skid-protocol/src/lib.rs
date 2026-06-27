@@ -1,6 +1,6 @@
-//! # interface
+//! # skid-protocol
 //!
-//! monitor-cat의 server(agent)와 client가 공유하는 계약(contract) 라이브러리.
+//! skid-monitor의 agent와 client가 공유하는 계약(contract) 라이브러리.
 //!
 //! - server는 [`metrics`]에 정의된 타입으로 수집한 정보를 채우고,
 //!   [`protocol`]의 메시지에 담아 client로 전송한다.

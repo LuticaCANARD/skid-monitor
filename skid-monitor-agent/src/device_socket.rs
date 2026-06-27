@@ -1,14 +1,14 @@
 //! Socket channel for observation devices.
 //!
 //! Devices can connect to this server-side TCP listener and send the same
-//! length-prefixed JSON [`Signal`] frames used by monitor-cat client transport.
-//! The server forwards accepted signals to the configured monitor-cat client.
+//! length-prefixed JSON [`Signal`] frames used by skid-monitor client transport.
+//! The server forwards accepted signals to the configured skid-monitor client.
 
 use crate::transport;
-use interface::otlp::{
+use skid_protocol::otlp::{
     ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest,
 };
-use interface::protocol::Signal;
+use skid_protocol::protocol::Signal;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{info, warn};
@@ -17,7 +17,10 @@ const DEFAULT_DEVICE_LISTEN_ADDR: &str = "127.0.0.1:9101";
 const MAX_FRAME_BYTES: u32 = 16 * 1024 * 1024;
 
 pub fn listen_addr() -> Option<String> {
-    match std::env::var("MONITOR_CAT_DEVICE_LISTEN_ADDR") {
+    match env_or_legacy(
+        "SKID_MONITOR_DEVICE_LISTEN_ADDR",
+        "MONITOR_CAT_DEVICE_LISTEN_ADDR",
+    ) {
         Ok(value)
             if value.eq_ignore_ascii_case("off") || value.eq_ignore_ascii_case("disabled") =>
         {
@@ -26,6 +29,10 @@ pub fn listen_addr() -> Option<String> {
         Ok(value) => Some(value),
         Err(_) => Some(DEFAULT_DEVICE_LISTEN_ADDR.to_string()),
     }
+}
+
+fn env_or_legacy(primary: &str, legacy: &str) -> Result<String, std::env::VarError> {
+    std::env::var(primary).or_else(|_| std::env::var(legacy))
 }
 
 pub async fn serve(addr: String) -> std::io::Result<()> {

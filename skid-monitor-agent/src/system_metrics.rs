@@ -1,10 +1,10 @@
 //! Linux host/system metric collection.
 //!
 //! This module intentionally reads stable kernel interfaces directly instead of
-//! depending on a heavier metrics crate. It keeps monitor-cat useful on small
+//! depending on a heavier metrics crate. It keeps skid-monitor useful on small
 //! nodes and in offline builds.
 
-use interface::metrics::{Metric, MetricKind, Source};
+use skid_protocol::metrics::{Metric, MetricKind, Source};
 use std::collections::HashSet;
 use std::ffi::CString;
 use std::fs;

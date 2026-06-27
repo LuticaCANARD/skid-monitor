@@ -1,7 +1,7 @@
 //! OTLP wire model shared by server and client.
 //!
 //! These are generated OpenTelemetry protobuf types with serde support enabled,
-//! so the monitor-cat TCP frame can carry OTLP export request payloads without
+//! so the skid-monitor TCP frame can carry OTLP export request payloads without
 //! flattening spans, logs, or metrics into lossy DTOs.
 
 pub use opentelemetry_proto::tonic;

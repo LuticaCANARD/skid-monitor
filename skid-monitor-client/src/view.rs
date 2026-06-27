@@ -2,13 +2,13 @@
 //!
 //! 수신한 OTLP 신호를 사용자가 볼 수 있도록 렌더링한다.
 
-use interface::otlp::tonic::common::v1::{AnyValue, KeyValue, any_value};
-use interface::otlp::tonic::logs::v1::LogRecord;
-use interface::otlp::tonic::metrics::v1::{
+use skid_protocol::otlp::tonic::common::v1::{AnyValue, KeyValue, any_value};
+use skid_protocol::otlp::tonic::logs::v1::LogRecord;
+use skid_protocol::otlp::tonic::metrics::v1::{
     ExponentialHistogram, Histogram, Metric, NumberDataPoint, Sum, metric, number_data_point,
 };
-use interface::otlp::tonic::trace::v1::Span;
-use interface::protocol::Signal;
+use skid_protocol::otlp::tonic::trace::v1::Span;
+use skid_protocol::protocol::Signal;
 
 /// 수신한 신호를 사용자에게 보여준다.
 pub fn render(signal: &Signal) {
@@ -53,7 +53,7 @@ fn format_signal(signal: &Signal) -> String {
     }
 }
 
-fn metric_count(request: &interface::otlp::ExportMetricsServiceRequest) -> usize {
+fn metric_count(request: &skid_protocol::otlp::ExportMetricsServiceRequest) -> usize {
     request
         .resource_metrics
         .iter()
@@ -62,7 +62,7 @@ fn metric_count(request: &interface::otlp::ExportMetricsServiceRequest) -> usize
         .sum()
 }
 
-fn span_count(request: &interface::otlp::ExportTraceServiceRequest) -> usize {
+fn span_count(request: &skid_protocol::otlp::ExportTraceServiceRequest) -> usize {
     request
         .resource_spans
         .iter()
@@ -71,7 +71,7 @@ fn span_count(request: &interface::otlp::ExportTraceServiceRequest) -> usize {
         .sum()
 }
 
-fn log_count(request: &interface::otlp::ExportLogsServiceRequest) -> usize {
+fn log_count(request: &skid_protocol::otlp::ExportLogsServiceRequest) -> usize {
     request
         .resource_logs
         .iter()
@@ -104,13 +104,14 @@ fn format_sum(metric: &Metric, sum: &Sum) -> Vec<String> {
     let temporality = match sum.aggregation_temporality {
         value
             if value
-                == interface::otlp::tonic::metrics::v1::AggregationTemporality::Delta as i32 =>
+                == skid_protocol::otlp::tonic::metrics::v1::AggregationTemporality::Delta
+                    as i32 =>
         {
             "delta"
         }
         value
             if value
-                == interface::otlp::tonic::metrics::v1::AggregationTemporality::Cumulative
+                == skid_protocol::otlp::tonic::metrics::v1::AggregationTemporality::Cumulative
                     as i32 =>
         {
             "cumulative"
@@ -267,12 +268,12 @@ fn hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use interface::metrics::{Metric, MetricKind, Source, export_metrics};
-    use interface::otlp::tonic::common::v1::{AnyValue, InstrumentationScope, any_value};
-    use interface::otlp::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
-    use interface::otlp::tonic::resource::v1::Resource;
-    use interface::otlp::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span};
-    use interface::otlp::{ExportLogsServiceRequest, ExportTraceServiceRequest};
+    use skid_protocol::metrics::{Metric, MetricKind, Source, export_metrics};
+    use skid_protocol::otlp::tonic::common::v1::{AnyValue, InstrumentationScope, any_value};
+    use skid_protocol::otlp::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
+    use skid_protocol::otlp::tonic::resource::v1::Resource;
+    use skid_protocol::otlp::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span};
+    use skid_protocol::otlp::{ExportLogsServiceRequest, ExportTraceServiceRequest};
 
     #[test]
     fn formats_metrics() {

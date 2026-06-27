@@ -3,8 +3,8 @@
 //! server agent 자신을 OTel SDK로 계측해 metrics/traces/logs 세 신호를 생성한다.
 //! 신호는 두 갈래로 흐른다.
 //!
-//! - **경로 1 (monitor-cat 파이프라인)**: in-memory exporter에 모아 두고, [`crate::collector`]가
-//!   주기적으로 읽어 `interface` 타입으로 변환해 client로 전송한다.
+//! - **경로 1 (skid-monitor 파이프라인)**: in-memory exporter에 모아 두고, [`crate::collector`]가
+//!   주기적으로 읽어 `skid_protocol` 타입으로 변환해 client로 전송한다.
 //! - **경로 2 (옵션)**: 환경변수 `OTEL_EXPORTER_OTLP_ENDPOINT`가 설정돼 있으면 OTLP exporter를
 //!   같은 provider에 병행 등록해 Jaeger/Collector 등 외부 백엔드로도 내보낸다.
 
@@ -22,7 +22,7 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 
 /// 계측 서비스 이름. trace/metric/log의 `service.name` resource attribute로 쓰인다.
-const SERVICE_NAME: &str = "monitor-cat-server";
+const SERVICE_NAME: &str = "skid-monitor-agent";
 
 /// SDK provider와 in-memory exporter 핸들을 보관한다.
 ///

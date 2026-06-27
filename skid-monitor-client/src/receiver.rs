@@ -1,8 +1,8 @@
 //! 수신 계층.
 //!
-//! server agent가 보낸 [`interface::protocol::Signal`]을 받아온다.
+//! server agent가 보낸 [`skid_protocol::protocol::Signal`]을 받아온다.
 
-use interface::protocol::Signal;
+use skid_protocol::protocol::Signal;
 use std::io::{self, Read};
 use std::net::TcpListener;
 
@@ -11,9 +11,16 @@ const MAX_FRAME_BYTES: u32 = 16 * 1024 * 1024;
 
 /// client가 수신 대기할 주소.
 ///
-/// server의 `MONITOR_CAT_CLIENT_ADDR`와 같은 값을 쓰면 된다.
+/// agent의 `SKID_MONITOR_CLIENT_ADDR`와 같은 값을 쓰면 된다.
 pub fn listen_addr() -> String {
-    std::env::var("MONITOR_CAT_CLIENT_ADDR").unwrap_or_else(|_| DEFAULT_LISTEN_ADDR.to_string())
+    env_or_legacy("SKID_MONITOR_CLIENT_ADDR", "MONITOR_CAT_CLIENT_ADDR")
+        .unwrap_or_else(|| DEFAULT_LISTEN_ADDR.to_string())
+}
+
+fn env_or_legacy(primary: &str, legacy: &str) -> Option<String> {
+    std::env::var(primary)
+        .ok()
+        .or_else(|| std::env::var(legacy).ok())
 }
 
 /// TCP 기반 signal 수신기.
@@ -58,7 +65,7 @@ fn read_signal(reader: &mut impl Read) -> io::Result<Signal> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use interface::metrics::{Metric, MetricKind, Source, export_metrics};
+    use skid_protocol::metrics::{Metric, MetricKind, Source, export_metrics};
 
     #[test]
     fn reads_length_prefixed_signal() {

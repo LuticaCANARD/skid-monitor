@@ -1,10 +1,10 @@
-//! monitor-cat server agent.
+//! skid-monitor agent.
 //!
 //! 호스트/인프라에서 정보를 수집(OpenTelemetry, k8s 인프라 시스템 등)하여
-//! `interface` 프로토콜로 client에 전송하는 수집 agent.
+//! `skid_protocol` 프로토콜로 client에 전송하는 수집 agent.
 //!
 //! 현재는 server 자신을 OpenTelemetry SDK로 자체 계측하여 metrics/traces/logs를 생성하고,
-//! 이를 `interface` 신호로 변환해 [`transport`]로 내보낸다.
+//! 이를 `skid_protocol` 신호로 변환해 [`transport`]로 내보낸다.
 
 mod collector;
 mod device_socket;
@@ -12,8 +12,8 @@ mod system_metrics;
 mod telemetry;
 mod transport;
 
-use interface::protocol::Signal;
-use interface::{
+use skid_protocol::protocol::Signal;
+use skid_protocol::{
     metrics::export_metrics,
     otlp::{ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest},
 };
@@ -26,7 +26,7 @@ const CYCLE_INTERVAL: Duration = Duration::from_secs(15);
 #[tokio::main]
 async fn main() {
     let guard = telemetry::init();
-    info!("monitor-cat server agent starting...");
+    info!("skid-monitor agent starting...");
 
     if let Some(addr) = device_socket::listen_addr() {
         tokio::spawn(async move {
@@ -64,8 +64,8 @@ async fn run_cycle(
     let mut metrics = collector::collect(guard);
     let system_metrics = export_metrics(
         system_sampler.collect(),
-        "monitor-cat-server",
-        "monitor-cat-system",
+        "skid-monitor-agent",
+        "skid-monitor-system",
     );
     metrics
         .resource_metrics
