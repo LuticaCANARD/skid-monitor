@@ -7,3 +7,4 @@
 | --- | --- |
 | [Avatar Client UI Direction](avatar-client-ui.md) | Tauri dashboard, VRM, Unity companion client 방향 |
 | [Client RFCs](rfcs/README.md) | 클라이언트 전용 RFC 목록 |
+| [Client Use Cases](usecases/README.md) | client crate 사용 시나리오 |

@@ -8,7 +8,6 @@
 | Scope | `skid-protocol`, `skid-monitor-agent`, `skid-monitor-client`, `skid-edge-agent`, `skid-file-node`, `skid-compute-advisor`, future `skid-stream-node` |
 | Protocol | `skid-protocol::protocol::Signal` over length-prefixed JSON today, SKDM v1 device frame next |
 | Decision Type | Initial repository umbrella, deployment boundary, configuration, framing, capability telemetry |
-| Imported Sources | `LuticaCANARD/skid-node`, `LuticaCANARD/SKID-rust`, `LuticaCANARD/LuticaSKID`, `LuticaCANARD/SKIDStreamPipe` |
 
 ## Abstract
 
@@ -18,6 +17,77 @@ framing, compute probe, stream telemetry로 나누어 적었던 설계를 하나
 핵심 결정은 `skid-monitor`를 SKID 계열 실험의 canonical integration repository로 두고, 다른
 `skid-*` repository는 조사와 설계의 source로만 취급한다는 것이다. 채택할 기능은 먼저 이 RFC에
 기록하고, 실제 구현은 이 repository 안에서만 진행한다.
+
+## Detailed Introduction
+
+Skid Monitor는 애플리케이션, Linux host, edge 장비, read-only file node, compute capability,
+future stream sidecar에서 나오는 신호를 하나의 가벼운 관측 흐름으로 모으려는 실험이다. 첫 단계의
+목표는 "무엇을 실행할 수 있는가"보다 "어디에서 무엇을 관측했고, 그 신호를 어떤 경계로 안전하게
+흘릴 것인가"를 고정하는 것이다. 그래서 이 RFC는 기능 목록이 아니라 초기 통합 경계에 대한 문서다.
+
+현재 repository의 중심은 여섯 crate다.
+
+- `skid-protocol`: agent, client, capability node가 공유하는 `Signal`/metric 계약
+- `skid-monitor-agent`: host/system/OpenTelemetry 신호를 수집하고 device ingress를 여는 gateway
+- `skid-monitor-client`: 사람이 보는 console client와 C# extension host 경계
+- `skid-edge-agent`: edge 물리/환경 신호를 만드는 작은 probe
+- `skid-file-node`: read-only root의 가용성과 크기를 알리는 file capability node
+- `skid-compute-advisor`: 병렬 처리 capability와 route advice 후보를 알리는 compute node
+
+여기에 future `skid-stream-node`와 quantum adapter가 붙을 수 있다. 단, future node도 같은 원칙을
+따른다. raw media frame, file chunk, compute input 같은 큰 payload나 권한이 필요한 데이터는 초기
+device socket으로 보내지 않는다. device socket은 우선 telemetry와 capability metadata를 흘리는
+control plane이다.
+
+초기 구조를 한눈에 보면 다음과 같다.
+
+```text
+Edge / capability side                         Monitor side
+
+  skid-edge-agent
+    edge.temperature
+    edge.voltage.input
+    edge.watchdog.resets
+           |
+           |  SKID_MONITOR_DEVICE_ADDR
+           |  legacy len+JSON Signal today
+           |  SKDM v1 later
+           v
+  skid-file-node  ----------------------->  skid-monitor-agent  ----->  skid-monitor-client
+    file root availability                  device ingress              console summary
+    root_label/root_path                     host/system metrics         extension events
+
+  skid-compute-advisor
+    compute_advisor.*
+    compute_probe.* when opt-in
+
+  future skid-stream-node
+    stream.* telemetry only
+    endpoint metadata only
+```
+
+이 그림에서 중요한 점은 화살표의 방향이다. capability node가 agent로 push한다. agent가 node에
+접속해 pull하지 않는다. 이 선택은 초기 구현을 단순하게 만들지만, 재시도/백오프/버퍼가 없으면
+agent 재시작이나 네트워크 단절 동안 신호가 손실된다. 따라서 push 모델은 "현재 구현"이지 영원한
+정답이 아니다. 운영 전에는 영속 연결, heartbeat, backpressure, 짧은 로컬 버퍼가 필요하다.
+
+이 RFC가 다섯 주제를 하나로 묶는 이유도 이 흐름 때문이다.
+
+1. 배포 경계가 먼저다. edge/file/compute/stream 기능이 agent 내부 모듈인지 독립 node인지가
+   정해져야 권한, 설치, Kubernetes 운용, blast radius를 말할 수 있다.
+2. 설정 모델이 그 다음이다. node kind, transport, interface, binding이 흩어진 환경변수로만 남으면
+   stream이나 compute probe를 추가할 때 같은 결정을 반복하게 된다.
+3. framing은 신뢰 경계다. legacy length-prefixed JSON은 간단하지만 magic/version/header/auth slot이
+   없어서 accidental protocol mix-up과 공개 ingress에 약하다. SKDM v1은 이 문제를 줄이기 위한
+   다음 envelope다.
+4. compute advisor와 stream telemetry는 "실행/전송을 하지 않는 capability 관측"의 대표 사례다.
+   compute는 remote executor가 아니고, stream은 media server가 아니다. 이 제한을 초기 RFC에서
+   못박아야 후속 구현이 권한을 성급하게 넓히지 않는다.
+
+따라서 이 RFC의 독자는 두 층으로 읽으면 된다. 먼저 Decision Summary와 Canonical Terms를 읽어
+정준 식별자와 금지 경계를 잡는다. 그 다음 배포, 설정, device frame, compute, stream 절을 읽어 각
+기능이 같은 control plane 위에서 어떻게 확장되는지 확인한다. future RFC backlog는 이 초기 계약을
+깨지 않고 별도 권한 모델을 열어야 하는 주제들의 목록이다.
 
 ## Decision Summary
 

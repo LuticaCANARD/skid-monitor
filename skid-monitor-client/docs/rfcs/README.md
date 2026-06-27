@@ -4,4 +4,5 @@
 
 | RFC | Status | Title |
 | --- | --- | --- |
-| [0001](0001-csharp-extension-developer-experience.md) | Draft | C# Extension Developer Experience |
+| [0001](0001-crate-role.md) | Draft | skid-monitor-client Crate Role |
+| [0002](0002-csharp-extension-developer-experience.md) | Draft | C# Extension Developer Experience |

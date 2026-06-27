@@ -23,6 +23,8 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 다른 SKID 계열 repository에서 가져온 설계 후보도 먼저 RFC 0001에 통합해 정준 계약을 고정한 뒤,
 필요할 때 후속 RFC로 분리한다.
 
+각 Rust crate의 역할 RFC와 사용 use case는 해당 crate 아래의 `docs/rfcs`와 `docs/usecases`에 둔다.
+
 ## Server Metrics
 
 `skid-monitor-agent`는 OpenTelemetry 자체 계측뿐 아니라 Linux 서버의 호스트 메트릭도 함께
