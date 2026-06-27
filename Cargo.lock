@@ -990,7 +990,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "skid-compute-advisor"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "skid-protocol",
+]
+
+[[package]]
 name = "skid-edge-agent"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "skid-protocol",
+]
+
+[[package]]
+name = "skid-file-node"
 version = "0.1.0"
 dependencies = [
  "serde_json",

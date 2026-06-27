@@ -3,13 +3,27 @@
 Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드, 분산 compute capability에서
 나오는 신호를 하나의 가벼운 프로토콜로 모으는 실험적 모니터링/라우팅 툴킷이다.
 
-현재 워크스페이스는 네 개의 Rust crate와 C# 확장 프로젝트로 나뉜다.
+이 repository는 SKID 계열 실험의 통합 지점이다. 다른 `skid-*` repository에서 확인한 요소는
+먼저 RFC로 옮겨 설계를 고정하고, 실제 구현은 이 repository 안에서만 진행한다.
+
+현재 워크스페이스는 여섯 개의 Rust crate와 client-side .NET binding 프로젝트로 나뉜다.
 
 - `skid-protocol`: agent/client/edge adapter가 공유하는 OTLP 기반 직렬화 계약
 - `skid-monitor-agent`: OpenTelemetry 및 Linux host/system 신호를 수집해 `Signal`로 전송하는 agent
 - `skid-edge-agent`: edge 물리 계층/환경 신호를 수집해 `Signal`로 전송하는 agent
+- `skid-file-node`: read-only file offer 후보 root를 관측 신호로 알리는 초기 file node
+- `skid-compute-advisor`: 병렬 처리 capability와 route advice 후보를 알리는 초기 compute advisor
 - `skid-monitor-client`: `Signal`을 받아 콘솔에 표시하고 C# 확장 호스트로 전달하는 client
-- `skid-monitor-client/bindings/dotnet/`: out-of-process client-side C# extension host, SDK, sample extension
+- `skid-monitor-client/bindings/dotnet/`: 별도 SDK 라이브러리, out-of-process .NET extension host, sample extension
+
+배포 경계와 Kubernetes 운용 판단은 [RFC 0001: Edge and Capability Node Deployment](docs/rfcs/0001-edge-capability-node-deployment.md)를 따른다.
+클라이언트 UI와 C# extension 개발 방향은 [skid-monitor-client/docs](skid-monitor-client/docs/README.md)에 둔다.
+
+다른 SKID 계열 repository에서 가져온 설계 후보는 RFC로 고정한다. `skid-node`의 설정/transport plane은
+[RFC 0002](docs/rfcs/0002-node-config-and-transport-planes.md), device ingress frame은
+[RFC 0003](docs/rfcs/0003-device-ingress-framing-and-safety.md), GPU/image workload 기반 compute
+advisor는 [RFC 0004](docs/rfcs/0004-compute-workload-probes-and-route-advice.md), stream telemetry는
+[RFC 0005](docs/rfcs/0005-stream-telemetry-and-media-preview.md)를 따른다.
 
 ## Server Metrics
 
@@ -68,7 +82,7 @@ SKID_MONITOR_DEVICE_ADDR=127.0.0.1:9101 cargo run -p skid-edge-agent -- --once
 
 ## C# Client Extensions
 
-`skid-monitor-client`는 선택적으로 C# 확장 호스트를 실행할 수 있다. Rust client는 TCP 수신과
+`skid-monitor-client`는 선택적으로 .NET 확장 호스트를 sidecar 프로세스로 실행할 수 있다. Rust client는 TCP 수신과
 콘솔 렌더링을 유지하고, 확장 호스트에는 newline-delimited JSON 이벤트를 stdin으로 전달한다.
 
 ```sh
@@ -80,7 +94,8 @@ SKID_MONITOR_EXTENSION_HOST="dotnet run --project skid-monitor-client/bindings/d
 cargo run -p skid-monitor-client
 ```
 
-확장 SDK와 host 상세는 [skid-monitor-client/bindings/dotnet/README.md](skid-monitor-client/bindings/dotnet/README.md)를 따른다.
+확장 SDK, host, 런타임 sidecar 모델은 [skid-monitor-client/bindings/dotnet/README.md](skid-monitor-client/bindings/dotnet/README.md)와
+[client RFC](skid-monitor-client/docs/rfcs/0001-csharp-extension-developer-experience.md)을 따른다.
 
 ## Planned Nodes
 
@@ -88,8 +103,21 @@ cargo run -p skid-monitor-client
 `rsync`, local directory backend는 구현 세부 driver로 두고, client에는 안전하게 받을 수 있는
 파일 offer를 노출한다.
 
+현재 진입점은 실제 전송을 열지 않고 root별 파일 수/용량/가용성 metric만 장비 소켓으로 보낸다.
+
+```sh
+SKID_MONITOR_DEVICE_ADDR=127.0.0.1:9101 \
+cargo run -p skid-file-node -- --root logs=./logs --once
+```
+
 `skid-compute-advisor`는 병렬 처리가 가능한 기기의 CPU/GPU/RAM/VRAM/load/thermal/network
 capability를 수집하고, 실제 원격 실행 전에 explainable route advice를 제공하는 방향으로 둔다.
+
+현재 진입점은 원격 실행 없이 logical CPU 수와 placeholder route score만 장비 소켓으로 보낸다.
+
+```sh
+SKID_MONITOR_DEVICE_ADDR=127.0.0.1:9101 cargo run -p skid-compute-advisor -- --once
+```
 
 ## Quantum Telemetry
 

@@ -1,0 +1,8 @@
+[package]
+name = "skid-compute-advisor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+skid-protocol.workspace = true
+serde_json.workspace = true

@@ -5,6 +5,8 @@ members = [
     "skid-monitor-agent",
     "skid-monitor-client",
     "skid-edge-agent",
+    "skid-file-node",
+    "skid-compute-advisor",
 ]
 
 [workspace.package]

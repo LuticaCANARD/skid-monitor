@@ -3,5 +3,11 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageId>Skid.Monitor.Client.Sdk</PackageId>
+    <Title>Skid Monitor Client SDK</Title>
+    <Description>Client-side .NET extension SDK for Skid Monitor.</Description>
+    <Authors>LuticaCANARD</Authors>
+    <PackageTags>skid-monitor;monitoring;extensions;client</PackageTags>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 </Project>

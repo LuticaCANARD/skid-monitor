@@ -40,6 +40,10 @@ pub enum Source {
     Kubernetes,
     /// 엣지 노드 주변의 MCU/센서/전원/네트워크 장비에서 온 물리 계층 신호.
     EdgeDevice,
+    /// 파일 offer, 안전한 root, 전송 가능성 등 파일 접근 노드에서 온 신호.
+    FileNode,
+    /// 병렬 처리 capability와 route advice 후보 산정을 위한 compute 노드 신호.
+    ComputeAdvisor,
     /// 클라우드 QPU 작업 상태, 결과 품질, 큐 상태 등 양자 컴퓨팅 백엔드에서 온 신호.
     Quantum,
     /// 그 외 호스트 시스템 지표.
@@ -52,6 +56,8 @@ impl Source {
             Source::OpenTelemetry => "opentelemetry",
             Source::Kubernetes => "kubernetes",
             Source::EdgeDevice => "edge_device",
+            Source::FileNode => "file_node",
+            Source::ComputeAdvisor => "compute_advisor",
             Source::Quantum => "quantum",
             Source::System => "system",
         }

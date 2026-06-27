@@ -1,0 +1,8 @@
+[package]
+name = "skid-file-node"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+skid-protocol.workspace = true
+serde_json.workspace = true
