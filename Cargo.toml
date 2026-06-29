@@ -3,7 +3,7 @@ resolver = "3"
 members = [
     "skid-protocol",
     "skid-monitor-agent",
-    "skid-monitor-client",
+    "client/skid-monitor-client-lib",
     "skid-edge-agent",
     "skid-file-node",
     "skid-compute-advisor",
