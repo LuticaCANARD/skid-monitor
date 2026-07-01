@@ -1,9 +1,10 @@
 [workspace]
 resolver = "3"
+exclude = ["client/skid-monitor-fe/src-tauri"]
 members = [
     "skid-protocol",
     "skid-monitor-agent",
-    "client/skid-monitor-client-lib",
+    "client/skid-monitor-client",
     "skid-edge-agent",
     "skid-file-node",
     "skid-compute-advisor",
@@ -21,13 +22,13 @@ skid-protocol = { path = "skid-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# OpenTelemetry 자체 계측 스택 (0.31 코호트, tracing-opentelemetry는 0.31에 대응하는 0.32)
-opentelemetry = { version = "0.31", features = ["trace", "metrics", "logs"] }
-opentelemetry_sdk = { version = "0.31", features = ["trace", "metrics", "logs", "rt-tokio", "testing"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "trace", "metrics", "logs"] }
-opentelemetry-proto = { version = "0.31", default-features = false, features = ["gen-tonic-messages", "with-serde", "trace", "metrics", "logs"] }
-opentelemetry-appender-tracing = "0.31"
-tracing-opentelemetry = "0.32"
+# OpenTelemetry 자체 계측 스택 (0.32 코호트, tracing-opentelemetry는 0.32에 대응하는 0.33)
+opentelemetry = { version = "0.32.0", features = ["trace", "metrics", "logs"] }
+opentelemetry_sdk = { version = "0.32.1", features = ["trace", "metrics", "logs", "rt-tokio", "testing"] }
+opentelemetry-otlp = { version = "0.32.0", features = ["grpc-tonic", "trace", "metrics", "logs"] }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic-messages", "with-serde", "trace", "metrics", "logs"] }
+opentelemetry-appender-tracing = "0.32"
+tracing-opentelemetry = "0.33.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry", "std", "fmt"] }
 tokio = { version = "1", features = ["full"] }

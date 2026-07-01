@@ -220,6 +220,7 @@ fn key_values(attributes: impl IntoIterator<Item = (String, String)>) -> Vec<Key
             value: Some(AnyValue {
                 value: Some(any_value::Value::StringValue(value)),
             }),
+            key_strindex: 0,
         });
     }
     out

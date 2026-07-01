@@ -79,7 +79,7 @@ pub fn collect_logs(guard: &TelemetryGuard) -> ExportLogsServiceRequest {
                 .iter()
                 .map(|log| (&log.record, &log.instrumentation))
                 .collect::<Vec<_>>();
-            group_logs_by_resource_and_scope(LogBatch::new(&records), &resource)
+            group_logs_by_resource_and_scope(&LogBatch::new(&records), &resource)
         })
         .unwrap_or_default();
     let _ = guard.log_exporter.reset();

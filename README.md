@@ -25,6 +25,23 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 
 각 Rust crate의 역할 RFC와 사용 use case는 해당 crate 아래의 `docs/rfcs`와 `docs/usecases`에 둔다.
 
+## Frontend / Tauri Development
+
+`client/skid-monitor-fe`는 Tauri v2 기반 desktop frontend다. Linux에서 `bun run tauri dev`를
+처음 실행할 때 `glib-sys` build script가 `glib-2.0.pc`를 찾지 못하거나, `webkit2gtk-4.1.pc`가
+`pkg-config`에서 잡히지 않으면 Tauri Linux system dependency가 빠진 상태다.
+
+Ubuntu 24.04 기준으로 다음 패키지를 설치한다.
+
+```sh
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libglib2.0-dev pkg-config
+```
+
+설치 후 `pkg-config --modversion glib-2.0`와
+`pkg-config --modversion webkit2gtk-4.1`가 버전을 출력하는지 확인한 뒤
+`client/skid-monitor-fe`에서 `bun run tauri dev`를 실행한다.
+
 ## Server Metrics
 
 `skid-monitor-agent`는 OpenTelemetry 자체 계측뿐 아니라 Linux 서버의 호스트 메트릭도 함께
