@@ -64,3 +64,15 @@ SKID_MONITOR_DEVICE_ADDR=127.0.0.1:9101 cargo run -p skid-edge-agent -- --once
 1. MVP: `--once` smoke test를 유지한다.
 2. 다음 단계: send failure exit code와 structured stderr를 추가한다.
 3. Production: installer가 post-install check로 이 smoke test를 실행한다.
+
+## Use Case 5: 현장 Camera / Snapshot Provider 상태를 본다
+
+제품 경험: edge gateway에 연결된 카메라나 snapshot provider의 up/down, 해상도, fps, 최신 snapshot age,
+preview endpoint 존재 여부를 monitor client에서 본다. 실제 이미지는 사용자가 명시적으로 preview를 켠
+extension/GUI가 provider data plane에서 가져오고, edge agent는 raw image bytes를 device ingress로 보내지 않는다.
+
+개발 step:
+
+1. MVP: mock media provider mode로 `stream.provider.*`, `stream.endpoint.*`, `stream.snapshot.*` metric을 보낸다.
+2. 다음 단계: `status_http`나 `snapshot_http` adapter로 provider health와 snapshot freshness를 관측한다.
+3. Production: endpoint redaction, preview permission, audit id를 extension/GUI boundary와 연결한다.

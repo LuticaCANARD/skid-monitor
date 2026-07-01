@@ -16,8 +16,10 @@ Status 범례: Draft = 설계 합의 중인 forward-looking 문서로 코드를 
 | RFC | Status | Title | Scope |
 | --- | --- | --- | --- |
 | [0001](0001-initial-skid-monitor-integration.md) | Draft | Initial Skid Monitor Integration | 배포, 설정, device frame, compute probe, stream telemetry |
+| [0002](0002-extensible-media-provider.md) | Draft | Extensible Edge Media Provider Contract | camera/image/video provider, edge adapter, preview boundary |
 
 ## Notes
 
-초기 설계는 하나의 RFC 0001을 정준 출처로 삼는다. source/as_str/node kind 매핑, 환경변수, metric
-명명 규칙, framing 상한도 모두 RFC 0001 안의 Canonical Terms 절에서 관리한다.
+초기 통합 설계는 RFC 0001을 정준 출처로 삼는다. source/as_str/node kind 매핑, 환경변수, metric
+명명 규칙, framing 상한도 모두 RFC 0001 안의 Canonical Terms 절에서 관리한다. media provider처럼
+특정 영역의 계약이 커지는 경우에는 후속 RFC에서 확장 계약을 분리한다.
