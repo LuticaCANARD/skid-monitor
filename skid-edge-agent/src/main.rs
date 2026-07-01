@@ -4,9 +4,9 @@
 //! 첫 구현은 실제 하드웨어 입력 대신 deterministic mock sample을 내보내며, 센서 읽기 계층은
 //! 나중에 ESP32/STM32/Linux gateway 구현으로 교체할 수 있게 작게 유지한다.
 
+use skid_protocol::frame;
 use skid_protocol::metrics::{Metric, MetricKind, Source, export_metrics};
 use skid_protocol::protocol::Signal;
-use std::io::Write;
 use std::net::TcpStream;
 use std::time::Duration;
 
@@ -147,7 +147,7 @@ fn make_metric(
 }
 
 fn send(signal: Signal, addr: &str) {
-    let payload = match serde_json::to_vec(&signal) {
+    let payload = match frame::encode_signal_payload(&signal) {
         Ok(bytes) => bytes,
         Err(err) => {
             eprintln!("signal serialization failed: {err}");
@@ -166,11 +166,7 @@ fn send(signal: Signal, addr: &str) {
 
 fn send_tcp(addr: &str, payload: &[u8]) -> std::io::Result<()> {
     let mut stream = TcpStream::connect(addr)?;
-    let len = (payload.len() as u32).to_be_bytes();
-    stream.write_all(&len)?;
-    stream.write_all(payload)?;
-    stream.flush()?;
-    Ok(())
+    frame::write_signal_payload(&mut stream, payload)
 }
 
 #[cfg(test)]

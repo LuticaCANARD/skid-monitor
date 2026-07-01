@@ -55,12 +55,65 @@ pub(crate) fn push_capped<T>(items: &mut VecDeque<T>, item: T, max: usize) {
 
 pub(crate) fn format_f64(value: f64) -> String {
     let abs = value.abs();
-    if value.fract() == 0.0 && abs < 1_000_000.0 {
-        format!("{value:.0}")
-    } else if !(0.01..1_000_000.0).contains(&abs) && value != 0.0 {
-        format!("{value:.3e}")
+    let decimals = if value == 0.0 || value.fract() == 0.0 || abs >= 100.0 {
+        0
+    } else if abs >= 1.0 {
+        2
+    } else if abs >= 0.01 {
+        4
     } else {
-        format!("{value:.2}")
+        6
+    };
+
+    trim_fraction(format!("{value:.decimals$}"))
+}
+
+pub(crate) fn format_metric_value(value: f64, unit: &str) -> String {
+    if unit == config::METRIC_BYTE_UNIT {
+        return format_bytes(value);
+    }
+
+    let formatted = format_f64(value);
+    if unit.is_empty() {
+        formatted
+    } else {
+        format!("{formatted} {unit}")
+    }
+}
+
+fn format_bytes(value: f64) -> String {
+    let mut scaled = value.abs();
+    let mut unit_index = 0;
+    while scaled >= config::BYTE_UNIT_BASE && unit_index + 1 < config::BYTE_DISPLAY_UNITS.len() {
+        scaled /= config::BYTE_UNIT_BASE;
+        unit_index += 1;
+    }
+
+    if value.is_sign_negative() {
+        scaled = -scaled;
+    }
+
+    format!(
+        "{} {}",
+        format_f64(scaled),
+        config::BYTE_DISPLAY_UNITS[unit_index]
+    )
+}
+
+fn trim_fraction(mut value: String) -> String {
+    if value.contains('.') {
+        while value.ends_with('0') {
+            value.pop();
+        }
+        if value.ends_with('.') {
+            value.pop();
+        }
+    }
+
+    if value == "-0" {
+        "0".to_string()
+    } else {
+        value
     }
 }
 
@@ -85,4 +138,26 @@ pub(crate) fn shorten(value: &str, max_chars: usize) -> String {
         out.push(ch);
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_large_numbers_without_scientific_notation() {
+        assert_eq!(format_f64(17_470_000.0), "17470000");
+    }
+
+    #[test]
+    fn formats_byte_metrics_as_human_readable_units() {
+        assert_eq!(
+            format_metric_value(139_264.0, config::METRIC_BYTE_UNIT),
+            "136 KiB"
+        );
+        assert_eq!(
+            format_metric_value(17_470_000.0, config::METRIC_BYTE_UNIT),
+            "16.66 MiB"
+        );
+    }
 }

@@ -11,21 +11,28 @@
 ## Abstract
 
 `skid-monitor-agent`는 Skid Monitor의 collector/gateway binary다. 자체 OpenTelemetry 신호와 Linux
-host/system metrics를 수집하고, device ingress로 들어온 capability node의 `Signal`을 client로
-forward한다.
+host/system metrics를 수집하고, device/OTLP ingress로 들어온 `Signal`을 설정된 agent pipeline으로
+fan-out 한다.
 
 ## Responsibilities
 
 - 15초 주기로 metrics, traces, logs를 수집해 `Signal`로 전송한다.
 - Linux host/system metric을 `skid-protocol`의 metric helper로 OTLP request에 합친다.
 - `SKID_MONITOR_DEVICE_LISTEN_ADDR`에서 device ingress를 연다.
-- edge/file/compute node가 보낸 length-prefixed JSON `Signal`을 decode하고 client로 forward한다.
-- `SKID_MONITOR_CLIENT_ADDR`가 있으면 client에 TCP connect로 신호를 보낸다.
+- 선택적으로 `SKID_MONITOR_OTLP_GRPC_ADDR` 또는 config의 `receivers.otlp.grpc_addr`에서 OTLP gRPC
+  receiver를 연다.
+- edge/file/compute node가 보낸 length-prefixed JSON `Signal`을 decode하고 pipeline에 투입한다.
+- `SKID_MONITOR_AGENT_CONFIG`의 exporter/pipeline 설정에 따라 `skid_client`, `logging`, `otlp`
+  exporter로 신호를 fan-out 한다.
+- 설정이 없으면 `SKID_MONITOR_CLIENT_ADDR`가 있을 때 client에 TCP connect로 신호를 보낸다.
 
 ## Runtime Shape
 
-`main.rs`는 telemetry guard를 초기화하고 device socket task와 수집 interval loop를 함께 돌린다.
-device ingress는 tokio `TcpListener`를 쓰지만 client forward path는 현재 blocking TCP send다.
+`main.rs`는 config를 읽고 telemetry guard를 초기화한 뒤 self-observation interval, device socket task,
+OTLP gRPC receiver task를 설정에 따라 함께 돌린다. 각 receiver는 `SignalPipeline`으로 신호를 넘기고,
+pipeline은 signal type별 receiver filter, processor, exporter fan-out을 적용한다. device ingress는 tokio
+`TcpListener`, OTLP ingress는 tonic gRPC server를 쓴다. `skid_client` exporter의 client forward path는 현재
+blocking TCP send다.
 
 ## Boundaries
 

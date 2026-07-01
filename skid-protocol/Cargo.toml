@@ -11,6 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 # 신호 타입을 TCP 경계 너머로 보내기 위한 직렬화.
 serde = { workspace = true }
+serde_json.workspace = true
 
 # server-client 경계는 OTLP export request 타입을 공유한다.
 opentelemetry-proto.workspace = true

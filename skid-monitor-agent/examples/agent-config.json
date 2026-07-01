@@ -1,0 +1,48 @@
+{
+  "receivers": {
+    "self_observation": {
+      "enabled": true,
+      "interval_secs": 15
+    },
+    "device": {
+      "enabled": true,
+      "listen_addr": "127.0.0.1:9101"
+    },
+    "otlp": {
+      "enabled": false,
+      "grpc_addr": "127.0.0.1:4317"
+    }
+  },
+  "processors": {
+    "batch": {
+      "type": "batch"
+    }
+  },
+  "exporters": {
+    "skid": {
+      "type": "skid_client",
+      "addr": "127.0.0.1:9000"
+    },
+    "debug": {
+      "type": "logging",
+      "include_json": false
+    }
+  },
+  "pipelines": {
+    "metrics": {
+      "receivers": ["self_observation", "device", "otlp"],
+      "processors": ["batch"],
+      "exporters": ["skid", "debug"]
+    },
+    "traces": {
+      "receivers": ["self_observation", "device", "otlp"],
+      "processors": ["batch"],
+      "exporters": ["skid"]
+    },
+    "logs": {
+      "receivers": ["self_observation", "device", "otlp"],
+      "processors": ["batch"],
+      "exporters": ["skid"]
+    }
+  }
+}

@@ -62,6 +62,35 @@ SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 
 예전 `MONITOR_CAT_*` 환경변수도 당분간 fallback으로 읽는다.
 
+## Agent Pipeline Config
+
+`SKID_MONITOR_AGENT_CONFIG`에 JSON 설정 파일을 지정하면 agent를 Collector처럼
+receiver/processor/exporter/pipeline 단위로 구성할 수 있다. 설정이 없으면 기존 env 기반 기본값
+(`skid` exporter가 `SKID_MONITOR_CLIENT_ADDR`로 전송, device socket은 `127.0.0.1:9101`)을 쓴다.
+
+```json
+{
+  "receivers": {
+    "self_observation": { "enabled": true, "interval_secs": 15 },
+    "device": { "enabled": true, "listen_addr": "127.0.0.1:9101" },
+    "otlp": { "enabled": true, "grpc_addr": "127.0.0.1:4317" }
+  },
+  "processors": {
+    "batch": { "type": "batch" }
+  },
+  "exporters": {
+    "skid": { "type": "skid_client", "addr": "127.0.0.1:9000" },
+    "debug": { "type": "logging", "include_json": false },
+    "upstream": { "type": "otlp", "endpoint": "http://127.0.0.1:4317" }
+  },
+  "pipelines": {
+    "metrics": { "receivers": ["self_observation", "device", "otlp"], "processors": ["batch"], "exporters": ["skid", "debug"] },
+    "traces": { "receivers": ["self_observation", "device", "otlp"], "processors": ["batch"], "exporters": ["skid"] },
+    "logs": { "receivers": ["self_observation", "device", "otlp"], "processors": ["batch"], "exporters": ["skid"] }
+  }
+}
+```
+
 ## Observation Device Socket
 
 관측기기/게이트웨이는 agent의 장비 소켓에 연결해 같은 length-prefixed JSON `Signal` 프레임을

@@ -18,7 +18,9 @@ tracing-subscriber.workspace = true
 tokio.workspace = true
 
 # Signal 직렬화 후 TCP 전송
+serde.workspace = true
 serde_json.workspace = true
+tonic.workspace = true
 
 # Linux host filesystem stats (/proc + statvfs)
 libc = "0.2"

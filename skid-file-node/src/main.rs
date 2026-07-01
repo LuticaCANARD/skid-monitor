@@ -3,10 +3,10 @@
 //! 첫 진입점은 실제 파일 전송을 열지 않는다. read-only file offer의 후보 root를 훑고,
 //! agent 장비 소켓으로 capability metric만 보낸다.
 
+use skid_protocol::frame;
 use skid_protocol::metrics::{Metric, MetricKind, Source, export_metrics};
 use skid_protocol::protocol::Signal;
 use std::fs;
-use std::io::Write;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -220,7 +220,7 @@ impl RootSnapshot {
 }
 
 fn send(signal: Signal, addr: &str) {
-    let payload = match serde_json::to_vec(&signal) {
+    let payload = match frame::encode_signal_payload(&signal) {
         Ok(bytes) => bytes,
         Err(err) => {
             eprintln!("signal serialization failed: {err}");
@@ -239,11 +239,7 @@ fn send(signal: Signal, addr: &str) {
 
 fn send_tcp(addr: &str, payload: &[u8]) -> std::io::Result<()> {
     let mut stream = TcpStream::connect(addr)?;
-    let len = (payload.len() as u32).to_be_bytes();
-    stream.write_all(&len)?;
-    stream.write_all(payload)?;
-    stream.flush()?;
-    Ok(())
+    frame::write_signal_payload(&mut stream, payload)
 }
 
 #[cfg(test)]

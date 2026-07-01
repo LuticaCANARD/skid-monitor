@@ -1,6 +1,6 @@
 use crate::config;
 use crate::model::{MetricSample, ReceiverMessage};
-use crate::utils::format_f64;
+use crate::utils::{format_f64, format_metric_value};
 use skid_monitor_client::extension::ExtensionHost;
 use skid_monitor_client::receiver::{Receiver as SignalReceiver, listen_addr};
 use skid_protocol::otlp::tonic::common::v1::{AnyValue, KeyValue, any_value};
@@ -101,11 +101,7 @@ fn metric_to_samples(
     service: &str,
     scope: &str,
 ) -> Vec<MetricSample> {
-    let unit = if metric.unit.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", metric.unit)
-    };
+    let unit = metric.unit.as_str();
 
     match &metric.data {
         Some(metric::Data::Gauge(gauge)) => gauge
@@ -114,7 +110,7 @@ fn metric_to_samples(
             .filter_map(|point| {
                 point.value.as_ref().map(|value| MetricSample {
                     name: metric.name.clone(),
-                    value: format!("{}{}", number_value(value), unit),
+                    value: format_metric_value(number_f64(value), unit),
                     numeric: Some(number_f64(value)),
                     source: source.to_string(),
                     kind: "gauge".to_string(),
@@ -129,7 +125,7 @@ fn metric_to_samples(
             .filter_map(|point| {
                 point.value.as_ref().map(|value| MetricSample {
                     name: metric.name.clone(),
-                    value: format!("{}{}", number_value(value), unit),
+                    value: format_metric_value(number_f64(value), unit),
                     numeric: Some(number_f64(value)),
                     source: source.to_string(),
                     kind: "sum".to_string(),
@@ -144,7 +140,13 @@ fn metric_to_samples(
             .map(|point| MetricSample {
                 name: metric.name.clone(),
                 value: match point.sum {
-                    Some(sum) => format!("sum {}{} / count {}", format_f64(sum), unit, point.count),
+                    Some(sum) => {
+                        format!(
+                            "sum {} / count {}",
+                            format_metric_value(sum, unit),
+                            point.count
+                        )
+                    }
                     None => format!("count {}", point.count),
                 },
                 numeric: point.sum,
@@ -160,7 +162,13 @@ fn metric_to_samples(
             .map(|point| MetricSample {
                 name: metric.name.clone(),
                 value: match point.sum {
-                    Some(sum) => format!("sum {}{} / count {}", format_f64(sum), unit, point.count),
+                    Some(sum) => {
+                        format!(
+                            "sum {} / count {}",
+                            format_metric_value(sum, unit),
+                            point.count
+                        )
+                    }
                     None => format!("count {}", point.count),
                 },
                 numeric: point.sum,
@@ -176,9 +184,8 @@ fn metric_to_samples(
             .map(|point| MetricSample {
                 name: metric.name.clone(),
                 value: format!(
-                    "sum {}{} / count {}",
-                    format_f64(point.sum),
-                    unit,
+                    "sum {} / count {}",
+                    format_metric_value(point.sum, unit),
                     point.count
                 ),
                 numeric: Some(point.sum),
@@ -246,13 +253,6 @@ fn any_value(value: &AnyValue) -> String {
         Some(any_value::Value::BytesValue(value)) => format!("{} bytes", value.len()),
         Some(any_value::Value::StringValueStrindex(value)) => format!("strindex:{value}"),
         None => config::METRIC_EMPTY_FIELD.to_string(),
-    }
-}
-
-fn number_value(value: &number_data_point::Value) -> String {
-    match value {
-        number_data_point::Value::AsDouble(value) => format_f64(*value),
-        number_data_point::Value::AsInt(value) => value.to_string(),
     }
 }
 

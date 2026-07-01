@@ -4,7 +4,7 @@
 //! 신호는 두 갈래로 흐른다.
 //!
 //! - **경로 1 (skid-monitor 파이프라인)**: in-memory exporter에 모아 두고, [`crate::collector`]가
-//!   주기적으로 읽어 `skid_protocol` 타입으로 변환해 client로 전송한다.
+//!   주기적으로 읽어 `skid_protocol` 타입으로 변환한 뒤 agent pipeline으로 보낸다.
 //! - **경로 2 (옵션)**: 환경변수 `OTEL_EXPORTER_OTLP_ENDPOINT`가 설정돼 있으면 OTLP exporter를
 //!   같은 provider에 병행 등록해 Jaeger/Collector 등 외부 백엔드로도 내보낸다.
 

@@ -6,3 +6,4 @@
 | --- | --- | --- |
 | [0001](0001-crate-role.md) | Draft | skid-monitor-client Crate Role |
 | [0002](0002-csharp-extension-developer-experience.md) | Draft | C# Extension Developer Experience |
+| [0003](0003-agent-pipeline-visibility.md) | Draft | Agent Pipeline Visibility |

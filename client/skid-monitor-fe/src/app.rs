@@ -41,40 +41,65 @@ struct PanelLimits {
 }
 
 impl PanelLimits {
-    fn for_viewport(height: f32, layout: LayoutMode) -> Self {
-        let trends_ratio = match layout {
-            LayoutMode::Compact => config::TRENDS_COMPACT_HEIGHT_RATIO,
-            LayoutMode::Stacked => config::TRENDS_STACKED_HEIGHT_RATIO,
-            LayoutMode::Split => config::TRENDS_SPLIT_HEIGHT_RATIO,
-        };
+    fn for_remaining_height(height: f32, layout: LayoutMode) -> Self {
+        let available_height = height.max(0.0);
+        let main_height = config::MAIN_AREA_HEIGHT
+            .min((available_height - config::EVENT_LOG_HEIGHT_MIN - config::SECTION_GAP).max(0.0));
+        let event_log_height = (available_height - main_height - config::SECTION_GAP).max(0.0);
 
-        Self {
-            sources_height: clamped_extent(
-                height,
-                config::SOURCES_HEIGHT_RATIO,
-                config::SOURCES_HEIGHT_MIN,
-                config::SOURCES_HEIGHT_MAX,
-            ),
-            trends_height: clamped_extent(
-                height,
-                trends_ratio,
-                config::TRENDS_HEIGHT_MIN,
-                config::TRENDS_HEIGHT_MAX,
-            ),
-            metrics_height: clamped_extent(
-                height,
-                config::METRICS_TABLE_HEIGHT_RATIO,
-                config::METRICS_TABLE_HEIGHT_MIN,
-                config::METRICS_TABLE_HEIGHT_MAX,
-            ),
-            event_log_height: clamped_extent(
-                height,
-                config::EVENT_LOG_HEIGHT_RATIO,
-                config::EVENT_LOG_HEIGHT_MIN,
-                config::EVENT_LOG_HEIGHT_MAX,
-            ),
+        match layout {
+            LayoutMode::Split => {
+                let sources_height = clamped_extent(
+                    main_height,
+                    config::SOURCES_HEIGHT_RATIO,
+                    config::SOURCES_HEIGHT_MIN,
+                    config::SOURCES_HEIGHT_MAX,
+                )
+                .min(main_height);
+                let trends_height = (main_height - sources_height - config::SECTION_GAP).max(0.0);
+
+                Self {
+                    sources_height,
+                    trends_height,
+                    metrics_height: main_height,
+                    event_log_height,
+                }
+            }
+            LayoutMode::Stacked | LayoutMode::Compact => {
+                let panel_budget = (main_height - config::SECTION_GAP * 2.0).max(0.0);
+                let sources_height = clamped_extent(
+                    panel_budget,
+                    config::SOURCES_HEIGHT_RATIO,
+                    config::SOURCES_HEIGHT_MIN,
+                    config::SOURCES_HEIGHT_MAX,
+                )
+                .min(panel_budget);
+                let metrics_height = clamped_extent(
+                    panel_budget,
+                    config::METRICS_TABLE_HEIGHT_RATIO,
+                    config::METRICS_TABLE_HEIGHT_MIN,
+                    config::METRICS_TABLE_HEIGHT_MAX,
+                )
+                .min((panel_budget - sources_height).max(0.0));
+                let trends_height = (panel_budget - sources_height - metrics_height).max(0.0);
+
+                Self {
+                    sources_height,
+                    trends_height,
+                    metrics_height,
+                    event_log_height,
+                }
+            }
         }
     }
+}
+
+fn remaining_height(ui: &egui::Ui, content: ContentLayout) -> f32 {
+    (ui.clip_rect().bottom() - ui.cursor().top() - content.bottom_margin).max(0.0)
+}
+
+fn panel_body_height(panel_height: f32) -> f32 {
+    (panel_height - config::PANEL_HEADER_HEIGHT).max(1.0)
 }
 
 #[derive(Clone, Copy)]
@@ -391,6 +416,7 @@ impl ControlRoomApp {
     fn source_summary(&self, ui: &mut egui::Ui, max_height: f32) {
         ui.group(|ui| {
             ui.set_width(ui.available_width());
+            ui.set_min_height(max_height);
             ui.set_min_width(config::SOURCES_MIN_WIDTH);
             ui.heading("Sources");
             ui.separator();
@@ -404,7 +430,7 @@ impl ControlRoomApp {
             egui::ScrollArea::vertical()
                 .id_salt("sources-scroll")
                 .auto_shrink([false, true])
-                .max_height(max_height)
+                .max_height(panel_body_height(max_height))
                 .show(ui, |ui| {
                     for (source, count) in &self.source_counts {
                         ui.horizontal(|ui| {
@@ -424,6 +450,7 @@ impl ControlRoomApp {
     fn trends_panel(&self, ui: &mut egui::Ui, compact: bool, max_height: f32) {
         ui.group(|ui| {
             ui.set_width(ui.available_width());
+            ui.set_min_height(max_height);
             ui.heading("Trends");
             ui.separator();
 
@@ -445,7 +472,7 @@ impl ControlRoomApp {
             egui::ScrollArea::vertical()
                 .id_salt("trends-scroll")
                 .auto_shrink([false, true])
-                .max_height(max_height)
+                .max_height(panel_body_height(max_height))
                 .show(ui, |ui| {
                     for key in trend_keys {
                         if let Some(values) = self.metric_history.get(&key) {
@@ -501,6 +528,7 @@ impl ControlRoomApp {
         ui.group(|ui| {
             let panel_width = panel_width.max(1.0);
             ui.set_width(panel_width);
+            ui.set_min_height(max_height);
             ui.heading("Latest Metrics");
             ui.separator();
             if self.metrics.is_empty() {
@@ -511,9 +539,9 @@ impl ControlRoomApp {
             }
 
             if compact {
-                self.compact_metrics_table(ui, panel_width, max_height);
+                self.compact_metrics_table(ui, panel_width, panel_body_height(max_height));
             } else {
-                self.wide_metrics_table(ui, panel_width, max_height);
+                self.wide_metrics_table(ui, panel_width, panel_body_height(max_height));
             }
         });
     }
@@ -622,13 +650,14 @@ impl ControlRoomApp {
     fn event_log(&self, ui: &mut egui::Ui, panel_width: f32, max_height: f32) {
         ui.group(|ui| {
             ui.set_width(panel_width);
+            ui.set_min_height(max_height);
             ui.heading("Event Log");
             ui.separator();
             egui::ScrollArea::vertical()
                 .id_salt("event-log-scroll")
                 .stick_to_bottom(true)
                 .auto_shrink([false, false])
-                .max_height(max_height)
+                .max_height(panel_body_height(max_height))
                 .show(ui, |ui| {
                     for event in &self.events {
                         ui.horizontal(|ui| {
@@ -669,12 +698,16 @@ impl eframe::App for ControlRoomApp {
                         centered_content(ui, content, |ui| {
                             let layout = LayoutMode::for_width(content.width);
                             let compact = layout.is_compact();
-                            let limits = PanelLimits::for_viewport(ui.clip_rect().height(), layout);
 
                             self.header(ui, compact);
                             ui.add_space(config::HEADER_COUNTER_GAP);
                             self.counters(ui);
                             ui.add_space(config::SECTION_GAP);
+
+                            let limits = PanelLimits::for_remaining_height(
+                                remaining_height(ui, content),
+                                layout,
+                            );
                             match layout {
                                 LayoutMode::Split => {
                                     self.main_split(ui, compact, content.width, limits);

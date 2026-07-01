@@ -39,6 +39,8 @@ pub(crate) const GLOBAL_BUTTON_PADDING: Vec2 = Vec2::new(10.0, 6.0);
 pub(crate) const SECTION_GAP: f32 = 12.0;
 pub(crate) const HEADER_COUNTER_GAP: f32 = 16.0;
 pub(crate) const HEADER_STATUS_GAP: f32 = 20.0;
+pub(crate) const PANEL_HEADER_HEIGHT: f32 = 42.0;
+pub(crate) const MAIN_AREA_HEIGHT: f32 = 560.0;
 
 pub(crate) const GRAPH_PANEL_MIN_WIDTH: f32 = 310.0;
 pub(crate) const GRAPH_PANEL_MAX_WIDTH: f32 = 420.0;
@@ -57,11 +59,6 @@ pub(crate) const SOURCES_HEIGHT_MAX: f32 = 180.0;
 pub(crate) const SOURCES_HEIGHT_RATIO: f32 = 0.15;
 pub(crate) const SOURCES_MIN_WIDTH: f32 = 230.0;
 
-pub(crate) const TRENDS_HEIGHT_MIN: f32 = 220.0;
-pub(crate) const TRENDS_HEIGHT_MAX: f32 = 430.0;
-pub(crate) const TRENDS_COMPACT_HEIGHT_RATIO: f32 = 0.28;
-pub(crate) const TRENDS_STACKED_HEIGHT_RATIO: f32 = 0.34;
-pub(crate) const TRENDS_SPLIT_HEIGHT_RATIO: f32 = 0.46;
 pub(crate) const TRENDS_COMPACT_VISIBLE_COUNT: usize = 3;
 pub(crate) const TRENDS_WIDE_VISIBLE_COUNT: usize = 6;
 pub(crate) const TRENDS_COMPACT_NAME_CHARS: usize = 32;
@@ -100,8 +97,6 @@ pub(crate) const METRICS_COMPACT_ROW_EVEN: Color32 = Color32::from_rgb(18, 22, 2
 pub(crate) const METRICS_COMPACT_ROW_ODD: Color32 = Color32::from_rgb(14, 17, 23);
 
 pub(crate) const EVENT_LOG_HEIGHT_MIN: f32 = 120.0;
-pub(crate) const EVENT_LOG_HEIGHT_MAX: f32 = 220.0;
-pub(crate) const EVENT_LOG_HEIGHT_RATIO: f32 = 0.2;
 
 pub(crate) const PAGE_BACKGROUND: Color32 = Color32::from_rgb(15, 18, 24);
 pub(crate) const TITLE_COLOR: Color32 = Color32::from_rgb(231, 238, 247);
@@ -149,3 +144,6 @@ pub(crate) const METRIC_UNKNOWN_SOURCE: &str = "unknown";
 pub(crate) const METRIC_EMPTY_FIELD: &str = "-";
 pub(crate) const METRIC_ATTR_PREVIEW_COUNT: usize = 4;
 pub(crate) const METRIC_TREND_ATTR_COUNT: usize = 3;
+pub(crate) const METRIC_BYTE_UNIT: &str = "By";
+pub(crate) const BYTE_UNIT_BASE: f64 = 1024.0;
+pub(crate) const BYTE_DISPLAY_UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
