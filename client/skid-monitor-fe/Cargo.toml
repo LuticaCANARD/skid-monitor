@@ -1,0 +1,9 @@
+[package]
+name = "skid-monitor-fe"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+skid-monitor-client.workspace = true
+skid-protocol.workspace = true

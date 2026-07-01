@@ -6,7 +6,7 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 이 repository는 SKID 계열 실험의 통합 지점이다. 다른 `skid-*` repository에서 확인한 요소는
 먼저 RFC로 옮겨 설계를 고정하고, 실제 구현은 이 repository 안에서만 진행한다.
 
-현재 워크스페이스는 여섯 개의 Rust crate와 client-side .NET binding 프로젝트로 나뉜다.
+현재 워크스페이스는 일곱 개의 Rust crate와 client-side .NET binding 프로젝트로 나뉜다.
 
 - `skid-protocol`: agent/client/edge adapter가 공유하는 OTLP 기반 직렬화 계약
 - `skid-monitor-agent`: OpenTelemetry 및 Linux host/system 신호를 수집해 `Signal`로 전송하는 agent
@@ -14,6 +14,7 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 - `skid-file-node`: read-only file offer 후보 root를 관측 신호로 알리는 초기 file node
 - `skid-compute-advisor`: 병렬 처리 capability와 route advice 후보를 알리는 초기 compute advisor
 - `skid-monitor-client`: `Signal`을 받아 콘솔에 표시하고 C# 확장 호스트로 전달하는 client
+- `skid-monitor-fe`: egui 기반 control-room desktop frontend
 - `skid-monitor-client/bindings/dotnet/`: 별도 SDK 라이브러리, out-of-process .NET extension host, sample extension
 
 배포 경계, 설정/transport, device ingress frame, compute advisor, stream telemetry의 초기 결정은
@@ -25,22 +26,22 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 
 각 Rust crate의 역할 RFC와 사용 use case는 해당 crate 아래의 `docs/rfcs`와 `docs/usecases`에 둔다.
 
-## Frontend / Tauri Development
+## Frontend Control Room
 
-`client/skid-monitor-fe`는 Tauri v2 기반 desktop frontend다. Linux에서 `bun run tauri dev`를
-처음 실행할 때 `glib-sys` build script가 `glib-2.0.pc`를 찾지 못하거나, `webkit2gtk-4.1.pc`가
-`pkg-config`에서 잡히지 않으면 Tauri Linux system dependency가 빠진 상태다.
-
-Ubuntu 24.04 기준으로 다음 패키지를 설치한다.
+`client/skid-monitor-fe`는 egui 기반 native desktop frontend다. Tauri/WebView 대신 Rust UI로
+agent/client TCP signal을 직접 수신해 control-room dashboard로 보여준다. VRM/아바타 같은 3D 표현은
+Unity binding 쪽 책임으로 두고, 이 frontend는 운영자가 실시간 metric/log/trace 상태를 빠르게 훑는
+관제 화면에 집중한다.
 
 ```sh
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libglib2.0-dev pkg-config
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-fe
 ```
 
-설치 후 `pkg-config --modversion glib-2.0`와
-`pkg-config --modversion webkit2gtk-4.1`가 버전을 출력하는지 확인한 뒤
-`client/skid-monitor-fe`에서 `bun run tauri dev`를 실행한다.
+다른 터미널에서 같은 주소로 agent를 실행한다.
+
+```sh
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
+```
 
 ## Server Metrics
 
