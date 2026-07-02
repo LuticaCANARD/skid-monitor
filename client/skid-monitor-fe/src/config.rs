@@ -8,17 +8,29 @@ pub(crate) const WINDOW_INITIAL_SIZE: [f32; 2] = [1180.0, 760.0];
 pub(crate) const WINDOW_MIN_SIZE: [f32; 2] = [940.0, 620.0];
 pub(crate) const REPAINT_INTERVAL_MS: u64 = 250;
 
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const USE_GPU_ENV: &str = "SKID_MONITOR_FE_USE_GPU";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const USE_WAYLAND_ENV: &str = "SKID_MONITOR_FE_USE_WAYLAND";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const ENABLED_ENV_VALUE: &str = "1";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const LIBGL_ALWAYS_SOFTWARE_ENV: &str = "LIBGL_ALWAYS_SOFTWARE";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const MESA_LOADER_DRIVER_OVERRIDE_ENV: &str = "MESA_LOADER_DRIVER_OVERRIDE";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const GALLIUM_DRIVER_ENV: &str = "GALLIUM_DRIVER";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const SOFTWARE_GL_VALUE: &str = "1";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const SOFTWARE_DRIVER_VALUE: &str = "llvmpipe";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const ZINK_DRIVER_VALUE: &str = "zink";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const WAYLAND_DISPLAY_ENV: &str = "WAYLAND_DISPLAY";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const WAYLAND_SOCKET_ENV: &str = "WAYLAND_SOCKET";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const DISPLAY_ENV: &str = "DISPLAY";
 
 pub(crate) const MAX_EVENTS: usize = 256;

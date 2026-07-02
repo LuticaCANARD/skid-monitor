@@ -95,16 +95,23 @@ impl PanelLimits {
 }
 
 fn remaining_height(ui: &egui::Ui, content: ContentLayout) -> f32 {
-    (ui.clip_rect().bottom() - ui.cursor().top() - content.bottom_margin).max(0.0)
+    let consumed_height = (ui.cursor().top() - ui.min_rect().top()).max(0.0);
+    (content.height - consumed_height - content.bottom_margin).max(0.0)
 }
 
 fn panel_body_height(panel_height: f32) -> f32 {
     (panel_height - config::PANEL_HEADER_HEIGHT).max(1.0)
 }
 
+fn panel_content_height(ui: &egui::Ui, panel_height: f32) -> f32 {
+    let frame_margin = egui::Frame::group(ui.style()).total_margin().sum().y;
+    (panel_height - frame_margin).max(1.0)
+}
+
 #[derive(Clone, Copy)]
 struct ContentLayout {
     width: f32,
+    height: f32,
     side_margin: f32,
     bottom_margin: f32,
 }
@@ -124,6 +131,7 @@ impl ContentLayout {
 
         Self {
             width,
+            height: size.y.max(1.0),
             side_margin,
             bottom_margin: clamped_extent(
                 size.y,
@@ -170,7 +178,7 @@ fn centered_content<R>(
     let top = ui.cursor().top();
     let max_rect = egui::Rect::from_min_size(
         egui::pos2(viewport.left() + content.side_margin, top),
-        egui::vec2(content.width, viewport.height().max(1.0)),
+        egui::vec2(content.width, content.height),
     );
 
     ui.scope_builder(
@@ -414,9 +422,10 @@ impl ControlRoomApp {
     }
 
     fn source_summary(&self, ui: &mut egui::Ui, max_height: f32) {
+        let content_height = panel_content_height(ui, max_height);
         ui.group(|ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(max_height);
+            ui.set_min_height(content_height);
             ui.set_min_width(config::SOURCES_MIN_WIDTH);
             ui.heading("Sources");
             ui.separator();
@@ -430,7 +439,7 @@ impl ControlRoomApp {
             egui::ScrollArea::vertical()
                 .id_salt("sources-scroll")
                 .auto_shrink([false, true])
-                .max_height(panel_body_height(max_height))
+                .max_height(panel_body_height(content_height))
                 .show(ui, |ui| {
                     for (source, count) in &self.source_counts {
                         ui.horizontal(|ui| {
@@ -448,9 +457,10 @@ impl ControlRoomApp {
     }
 
     fn trends_panel(&self, ui: &mut egui::Ui, compact: bool, max_height: f32) {
+        let content_height = panel_content_height(ui, max_height);
         ui.group(|ui| {
             ui.set_width(ui.available_width());
-            ui.set_min_height(max_height);
+            ui.set_min_height(content_height);
             ui.heading("Trends");
             ui.separator();
 
@@ -472,7 +482,7 @@ impl ControlRoomApp {
             egui::ScrollArea::vertical()
                 .id_salt("trends-scroll")
                 .auto_shrink([false, true])
-                .max_height(panel_body_height(max_height))
+                .max_height(panel_body_height(content_height))
                 .show(ui, |ui| {
                     for key in trend_keys {
                         if let Some(values) = self.metric_history.get(&key) {
@@ -525,10 +535,11 @@ impl ControlRoomApp {
     }
 
     fn metrics_table(&self, ui: &mut egui::Ui, compact: bool, panel_width: f32, max_height: f32) {
+        let content_height = panel_content_height(ui, max_height);
         ui.group(|ui| {
             let panel_width = panel_width.max(1.0);
             ui.set_width(panel_width);
-            ui.set_min_height(max_height);
+            ui.set_min_height(content_height);
             ui.heading("Latest Metrics");
             ui.separator();
             if self.metrics.is_empty() {
@@ -539,9 +550,9 @@ impl ControlRoomApp {
             }
 
             if compact {
-                self.compact_metrics_table(ui, panel_width, panel_body_height(max_height));
+                self.compact_metrics_table(ui, panel_width, panel_body_height(content_height));
             } else {
-                self.wide_metrics_table(ui, panel_width, panel_body_height(max_height));
+                self.wide_metrics_table(ui, panel_width, panel_body_height(content_height));
             }
         });
     }
@@ -648,16 +659,17 @@ impl ControlRoomApp {
     }
 
     fn event_log(&self, ui: &mut egui::Ui, panel_width: f32, max_height: f32) {
+        let content_height = panel_content_height(ui, max_height);
         ui.group(|ui| {
             ui.set_width(panel_width);
-            ui.set_min_height(max_height);
+            ui.set_min_height(content_height);
             ui.heading("Event Log");
             ui.separator();
             egui::ScrollArea::vertical()
                 .id_salt("event-log-scroll")
                 .stick_to_bottom(true)
                 .auto_shrink([false, false])
-                .max_height(panel_body_height(max_height))
+                .max_height(panel_body_height(content_height))
                 .show(ui, |ui| {
                     for event in &self.events {
                         ui.horizontal(|ui| {
@@ -692,8 +704,8 @@ impl eframe::App for ControlRoomApp {
                 egui::ScrollArea::vertical()
                     .id_salt("control-room-page-scroll")
                     .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let content = ContentLayout::for_viewport(ui.clip_rect().size());
+                    .show_viewport(ui, |ui, viewport| {
+                        let content = ContentLayout::for_viewport(viewport.size());
 
                         centered_content(ui, content, |ui| {
                             let layout = LayoutMode::for_width(content.width);

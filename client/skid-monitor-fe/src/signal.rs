@@ -2,9 +2,9 @@ use crate::config;
 use crate::model::{MetricSample, ReceiverMessage};
 use crate::utils::{format_f64, format_metric_value};
 use skid_monitor_client::extension::ExtensionHost;
-use skid_monitor_client::receiver::{Receiver as SignalReceiver, listen_addr};
-use skid_protocol::otlp::tonic::common::v1::{AnyValue, KeyValue, any_value};
-use skid_protocol::otlp::tonic::metrics::v1::{Metric as OtlpMetric, metric, number_data_point};
+use skid_monitor_client::receiver::{listen_addr, Receiver as SignalReceiver};
+use skid_protocol::otlp::tonic::common::v1::{any_value, AnyValue, KeyValue};
+use skid_protocol::otlp::tonic::metrics::v1::{metric, number_data_point, Metric as OtlpMetric};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 

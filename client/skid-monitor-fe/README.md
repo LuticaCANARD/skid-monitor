@@ -13,6 +13,19 @@ sparkline trends without an extra plotting dependency.
 SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-fe
 ```
 
+The frontend defaults to the `low-spec` feature, which keeps the existing glow
+renderer and Linux software GL fallback. For the higher-spec wgpu renderer:
+
+```sh
+cargo run -p skid-monitor-fe --features high-spec
+```
+
+For a pure wgpu build without the default glow backend:
+
+```sh
+cargo run -p skid-monitor-fe --no-default-features --features high-spec
+```
+
 Linux에서는 Mesa/Zink/Vulkan driver 상태에 따라 `failed to choose pdev` 같은 렌더러 초기화 오류가
 날 수 있다. 이 frontend는 control-room UI라 기본값으로 software Mesa GL(`llvmpipe`)을 사용한다.
 또한 Wayland compositor 연결이 끊기며 `Broken pipe` / `WinitEventLoop(ExitFailure(1))`가 나는
