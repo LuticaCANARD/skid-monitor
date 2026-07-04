@@ -50,7 +50,6 @@ pub(crate) const GLOBAL_ITEM_SPACING: Vec2 = Vec2::new(10.0, 8.0);
 pub(crate) const GLOBAL_BUTTON_PADDING: Vec2 = Vec2::new(10.0, 6.0);
 pub(crate) const SECTION_GAP: f32 = 12.0;
 pub(crate) const HEADER_COUNTER_GAP: f32 = 16.0;
-pub(crate) const HEADER_STATUS_GAP: f32 = 20.0;
 pub(crate) const PANEL_HEADER_HEIGHT: f32 = 42.0;
 pub(crate) const MAIN_AREA_HEIGHT: f32 = 560.0;
 
