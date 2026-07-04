@@ -1,8 +1,8 @@
 use crate::components::{
     counters, event_log, header,
     layout::{
-        centered_content, graph_panel_width, remaining_height, ContentLayout, LayoutMode,
-        PanelLimits,
+        ContentLayout, LayoutMode, PanelLimits, centered_content, graph_panel_width,
+        remaining_height,
     },
     metrics, sources, trends,
 };
@@ -26,6 +26,62 @@ pub(crate) struct ControlRoomApp {
     metric_history: BTreeMap<String, VecDeque<f64>>,
     source_counts: BTreeMap<String, usize>,
 }
+
+#[derive(Clone, Copy)]
+enum MainPanel {
+    Sources,
+    Trends,
+    Metrics,
+}
+
+trait PanelTemplate {
+    fn height(self, limits: PanelLimits) -> f32;
+
+    fn render(
+        self,
+        app: &ControlRoomApp,
+        ui: &mut egui::Ui,
+        compact: bool,
+        panel_width: f32,
+        panel_height: f32,
+    );
+}
+
+impl PanelTemplate for MainPanel {
+    fn height(self, limits: PanelLimits) -> f32 {
+        match self {
+            Self::Sources => limits.sources_height,
+            Self::Trends => limits.trends_height,
+            Self::Metrics => limits.metrics_height,
+        }
+    }
+
+    fn render(
+        self,
+        app: &ControlRoomApp,
+        ui: &mut egui::Ui,
+        compact: bool,
+        panel_width: f32,
+        panel_height: f32,
+    ) {
+        match self {
+            Self::Sources => sources::show(ui, &app.source_counts, panel_width, panel_height),
+            Self::Trends => trends::show(
+                ui,
+                compact,
+                panel_width,
+                panel_height,
+                &app.metrics,
+                &app.metric_history,
+            ),
+            Self::Metrics => metrics::show(ui, compact, panel_width, panel_height, &app.metrics),
+        }
+    }
+}
+
+const STACKED_MAIN_PANELS: [MainPanel; 3] =
+    [MainPanel::Sources, MainPanel::Trends, MainPanel::Metrics];
+const GRAPH_MAIN_PANELS: [MainPanel; 2] = [MainPanel::Sources, MainPanel::Trends];
 
 impl ControlRoomApp {
     pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -133,24 +189,7 @@ impl ControlRoomApp {
     }
 
     fn main_stack(&self, ui: &mut egui::Ui, compact: bool, panel_width: f32, limits: PanelLimits) {
-        sources::show(ui, &self.source_counts, panel_width, limits.sources_height);
-        ui.add_space(config::SECTION_GAP);
-        trends::show(
-            ui,
-            compact,
-            panel_width,
-            limits.trends_height,
-            &self.metrics,
-            &self.metric_history,
-        );
-        ui.add_space(config::SECTION_GAP);
-        metrics::show(
-            ui,
-            compact,
-            panel_width,
-            limits.metrics_height,
-            &self.metrics,
-        );
+        self.panel_stack(ui, compact, panel_width, limits, &STACKED_MAIN_PANELS);
     }
 
     fn main_split(
@@ -168,28 +207,40 @@ impl ControlRoomApp {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(graph_width);
-                sources::show(ui, &self.source_counts, graph_width, limits.sources_height);
-                ui.add_space(config::SECTION_GAP);
-                trends::show(
-                    ui,
-                    compact,
-                    graph_width,
-                    limits.trends_height,
-                    &self.metrics,
-                    &self.metric_history,
-                );
+                self.panel_stack(ui, compact, graph_width, limits, &GRAPH_MAIN_PANELS);
             });
             ui.vertical(|ui| {
                 ui.set_width(metrics_width);
-                metrics::show(
-                    ui,
-                    compact,
-                    metrics_width,
-                    limits.metrics_height,
-                    &self.metrics,
-                );
+                self.panel(ui, compact, metrics_width, limits, MainPanel::Metrics);
             });
         });
+    }
+
+    fn panel_stack(
+        &self,
+        ui: &mut egui::Ui,
+        compact: bool,
+        panel_width: f32,
+        limits: PanelLimits,
+        panels: &[MainPanel],
+    ) {
+        for (index, panel) in panels.iter().copied().enumerate() {
+            if index > 0 {
+                ui.add_space(config::SECTION_GAP);
+            }
+            self.panel(ui, compact, panel_width, limits, panel);
+        }
+    }
+
+    fn panel(
+        &self,
+        ui: &mut egui::Ui,
+        compact: bool,
+        panel_width: f32,
+        limits: PanelLimits,
+        panel: MainPanel,
+    ) {
+        panel.render(self, ui, compact, panel_width, panel.height(limits));
     }
 }
 
