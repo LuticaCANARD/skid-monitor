@@ -1,4 +1,8 @@
-# skid-monitor Kubernetes 배포 계획
+# skid-monitor Kubernetes/Talos 배포 계획
+
+이 문서는 Linux Kubernetes, 특히 Talos single-node 홈랩 배포만 다룬다. Linux/macOS/Windows native
+agent package, service manager, 자동 업데이트 정책은 [agent-continuous-deployment.md](agent-continuous-deployment.md)를
+따른다.
 
 ## 클러스터 환경
 
@@ -25,21 +29,22 @@
 
 ## 이미지 빌드 전략
 
-Rust 바이너리를 `x86_64-unknown-linux-musl`로 정적 크로스컴파일 후 scratch/distroless 기반 이미지를 사용한다.
-이미지 크기를 최소화하고 Talos containerd와의 호환성을 높인다.
+Kubernetes용 Linux Rust 바이너리를 `x86_64-unknown-linux-musl`로 정적 크로스컴파일 후
+scratch/distroless 기반 이미지를 사용한다. 이미지 크기를 최소화하고 Talos containerd와의 호환성을
+높인다. 이 전략은 macOS `.pkg` 또는 Windows `.msi` 배포를 대체하지 않는다.
 
 ## 컴포넌트별 배포 방식
 
 | 컴포넌트 | 종류 | 이유 |
 |---|---|---|
-| `skid-monitor-agent` | DaemonSet | 호스트 `/proc` 직접 읽음, 노드당 1개 필요 |
+| `skid-monitor-agent` | DaemonSet | Linux host `/proc` 직접 읽음, Kubernetes 노드당 1개 필요 |
 | `skid-edge-agent` | Deployment | 상태 없는 edge signal/media-provider observer |
 | `skid-file-node` | Deployment | 상태 없는 서비스 |
 | `skid-compute-advisor` | Deployment | 분석 서비스, 필요 시 HPA 연결 |
 
 ### skid-monitor-agent 주의사항
 
-Talos에서 `/proc` 마운트 접근을 허용하려면 Pod spec에 다음이 필요하다:
+Talos/Linux에서 `/proc` 마운트 접근을 허용하려면 Pod spec에 다음이 필요하다:
 
 ```yaml
 hostPID: true
@@ -50,6 +55,9 @@ volumes:
     hostPath:
       path: /proc
 ```
+
+이 설정은 Linux/Kubernetes agent 전용이다. macOS native agent는 `launchd`, Windows native agent는
+Windows Service로 배포하며 `/proc` mount나 `hostPID`를 사용하지 않는다.
 
 ## 매니페스트 구조
 

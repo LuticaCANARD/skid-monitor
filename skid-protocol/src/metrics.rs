@@ -48,6 +48,8 @@ pub enum Source {
     Quantum,
     /// 그 외 호스트 시스템 지표.
     System,
+    /// macOS/MacBook host 지표. Linux `system` source와 분리해 UI에서 별도 live signal로 볼 수 있다.
+    MacOS,
 }
 
 impl Source {
@@ -60,6 +62,7 @@ impl Source {
             Source::ComputeAdvisor => "compute_advisor",
             Source::Quantum => "quantum",
             Source::System => "system",
+            Source::MacOS => "macos",
         }
     }
 }

@@ -38,6 +38,9 @@ impl SystemSampler {
     pub fn collect(&mut self) -> Vec<Metric> {
         let mut out = Vec::new();
 
+        #[cfg(target_os = "macos")]
+        collect_macos_metrics(&mut out);
+
         if let Ok(stat) = fs::read_to_string(PROC_STAT) {
             let current_cpu = collect_cpu_metrics(&stat, self.previous_cpu.as_ref(), &mut out);
             self.previous_cpu = current_cpu;
@@ -67,6 +70,295 @@ impl SystemSampler {
 
         out
     }
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_metrics(out: &mut Vec<Metric>) {
+    if let Ok(uptime) = command_output("uptime", &[]) {
+        collect_macos_load_metrics(&uptime, out);
+    }
+    if let Ok(vm_stat) = command_output("vm_stat", &[]) {
+        collect_macos_vm_metrics(&vm_stat, out);
+    }
+    if let Ok(df) = command_output("df", &["-k", "/"]) {
+        collect_macos_filesystem_metrics(&df, out);
+    }
+    if let Ok(pmset) = command_output("pmset", &["-g", "batt"]) {
+        collect_macos_battery_metrics(&pmset, out);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn command_output(program: &str, args: &[&str]) -> std::io::Result<String> {
+    let output = std::process::Command::new(program).args(args).output()?;
+    if !output.status.success() {
+        return Err(std::io::Error::other(format!(
+            "{program} exited with {}",
+            output.status
+        )));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_load_metrics(uptime: &str, out: &mut Vec<Metric>) {
+    let Some((_, rest)) = uptime
+        .split_once("load averages:")
+        .or_else(|| uptime.split_once("load average:"))
+    else {
+        return;
+    };
+    let values = rest
+        .split_whitespace()
+        .take(3)
+        .filter_map(|value| value.trim_end_matches(',').parse::<f64>().ok())
+        .collect::<Vec<_>>();
+    for (name, value) in [
+        ("system.load.1m", values.first().copied()),
+        ("system.load.5m", values.get(1).copied()),
+        ("system.load.15m", values.get(2).copied()),
+    ] {
+        if let Some(value) = value {
+            push_macos_metric(out, name, value, None, MetricKind::Gauge, Vec::new());
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_vm_metrics(vm_stat: &str, out: &mut Vec<Metric>) {
+    let page_size = parse_macos_page_size(vm_stat).unwrap_or(4096) as f64;
+    for (name, key, unit, kind, pages) in [
+        (
+            "system.memory.free",
+            "Pages free",
+            Some("By"),
+            MetricKind::Gauge,
+            true,
+        ),
+        (
+            "macos.memory.active",
+            "Pages active",
+            Some("By"),
+            MetricKind::Gauge,
+            true,
+        ),
+        (
+            "macos.memory.inactive",
+            "Pages inactive",
+            Some("By"),
+            MetricKind::Gauge,
+            true,
+        ),
+        (
+            "macos.memory.speculative",
+            "Pages speculative",
+            Some("By"),
+            MetricKind::Gauge,
+            true,
+        ),
+        (
+            "macos.memory.wired",
+            "Pages wired down",
+            Some("By"),
+            MetricKind::Gauge,
+            true,
+        ),
+        (
+            "macos.memory.compressor",
+            "Pages occupied by compressor",
+            Some("By"),
+            MetricKind::Gauge,
+            true,
+        ),
+        ("macos.vm.pageins", "Pageins", None, MetricKind::Sum, false),
+        (
+            "macos.vm.pageouts",
+            "Pageouts",
+            None,
+            MetricKind::Sum,
+            false,
+        ),
+        ("macos.vm.swapins", "Swapins", None, MetricKind::Sum, false),
+        (
+            "macos.vm.swapouts",
+            "Swapouts",
+            None,
+            MetricKind::Sum,
+            false,
+        ),
+    ] {
+        if let Some(value) = parse_macos_vm_value(vm_stat, key) {
+            let value = if pages { value * page_size } else { value };
+            push_macos_metric(out, name, value, unit, kind, Vec::new());
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn parse_macos_page_size(vm_stat: &str) -> Option<u64> {
+    let line = vm_stat.lines().next()?;
+    let (_, rest) = line.split_once("page size of")?;
+    rest.split_whitespace().next()?.parse().ok()
+}
+
+#[cfg(target_os = "macos")]
+fn parse_macos_vm_value(vm_stat: &str, key: &str) -> Option<f64> {
+    vm_stat.lines().find_map(|line| {
+        let (line_key, rest) = line.split_once(':')?;
+        (line_key.trim() == key).then(|| {
+            rest.trim()
+                .trim_end_matches('.')
+                .replace(',', "")
+                .parse::<f64>()
+                .ok()
+        })?
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_filesystem_metrics(df: &str, out: &mut Vec<Metric>) {
+    let Some(line) = df.lines().skip(1).find(|line| !line.trim().is_empty()) else {
+        return;
+    };
+    let parts = line.split_whitespace().collect::<Vec<_>>();
+    if parts.len() < 6 {
+        return;
+    }
+    let total = parse_f64(parts[1]).map(|value| value * 1024.0);
+    let used = parse_f64(parts[2]).map(|value| value * 1024.0);
+    let available = parse_f64(parts[3]).map(|value| value * 1024.0);
+    let usage = parts[4].trim_end_matches('%').parse::<f64>().ok();
+    let attrs = vec![
+        ("device".to_string(), parts[0].to_string()),
+        ("mountpoint".to_string(), parts[5].to_string()),
+    ];
+
+    push_optional_macos_metric(
+        out,
+        "system.filesystem.total",
+        total,
+        Some("By"),
+        MetricKind::Gauge,
+        attrs.clone(),
+    );
+    push_optional_macos_metric(
+        out,
+        "system.filesystem.used",
+        used,
+        Some("By"),
+        MetricKind::Gauge,
+        attrs.clone(),
+    );
+    push_optional_macos_metric(
+        out,
+        "system.filesystem.available",
+        available,
+        Some("By"),
+        MetricKind::Gauge,
+        attrs.clone(),
+    );
+    push_optional_macos_metric(
+        out,
+        "system.filesystem.usage",
+        usage,
+        Some("%"),
+        MetricKind::Gauge,
+        attrs,
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_battery_metrics(pmset: &str, out: &mut Vec<Metric>) {
+    let ac_connected = pmset.contains("AC Power") || pmset.contains("AC attached");
+    push_macos_metric(
+        out,
+        "macos.power.ac_connected",
+        if ac_connected { 1.0 } else { 0.0 },
+        None,
+        MetricKind::Gauge,
+        Vec::new(),
+    );
+
+    let battery_line = pmset.lines().find(|line| line.contains("InternalBattery"));
+    let battery_present = battery_line
+        .map(|line| line.contains("present: true"))
+        .unwrap_or(false);
+    push_macos_metric(
+        out,
+        "macos.battery.present",
+        if battery_present { 1.0 } else { 0.0 },
+        None,
+        MetricKind::Gauge,
+        Vec::new(),
+    );
+
+    let Some(line) = battery_line else {
+        return;
+    };
+    if let Some(percent) = parse_macos_battery_percent(line) {
+        push_macos_metric(
+            out,
+            "macos.battery.charge",
+            percent,
+            Some("%"),
+            MetricKind::Gauge,
+            Vec::new(),
+        );
+    }
+    let charging = line.contains("charging") && !line.contains("not charging");
+    push_macos_metric(
+        out,
+        "macos.battery.charging",
+        if charging { 1.0 } else { 0.0 },
+        None,
+        MetricKind::Gauge,
+        Vec::new(),
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn parse_macos_battery_percent(line: &str) -> Option<f64> {
+    line.split(';').find_map(|part| {
+        part.trim()
+            .split_whitespace()
+            .last()?
+            .strip_suffix('%')?
+            .parse::<f64>()
+            .ok()
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn push_optional_macos_metric(
+    out: &mut Vec<Metric>,
+    name: &str,
+    value: Option<f64>,
+    unit: Option<&str>,
+    kind: MetricKind,
+    attributes: Vec<(String, String)>,
+) {
+    if let Some(value) = value {
+        push_macos_metric(out, name, value, unit, kind, attributes);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn push_macos_metric(
+    out: &mut Vec<Metric>,
+    name: &str,
+    value: f64,
+    unit: Option<&str>,
+    kind: MetricKind,
+    attributes: Vec<(String, String)>,
+) {
+    out.push(Metric {
+        name: name.to_string(),
+        value,
+        source: Source::MacOS,
+        unit: unit.map(str::to_string),
+        kind,
+        attributes,
+    });
 }
 
 #[derive(Debug, Clone)]
@@ -638,6 +930,63 @@ Inter-|   Receive                                                |  Transmit
         assert!(
             out.iter()
                 .any(|metric| metric.name == "system.network.tx_packets" && metric.value == 5.0)
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parses_macos_load_memory_filesystem_and_battery_metrics() {
+        let uptime = "21:40  1 user, load averages: 1.81 2.15 2.48";
+        let vm_stat = "\
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                               36,408.
+Pages active:                            262588.
+Pages inactive:                          251092.
+Pages speculative:                        11172.
+Pages wired down:                         97786.
+Pages occupied by compressor:            353642.
+Pageins:                                2644811.
+Pageouts:                                 18327.
+Swapins:                                      0.
+Swapouts:                                     0.
+";
+        let df = "\
+Filesystem     1024-blocks      Used Available Capacity iused      ifree %iused  Mounted on
+/dev/disk2s1s1   244605332  12261616 136623220     9%  458116 1366232200    0%   /
+";
+        let pmset = "\
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=23396451)\t80%; AC attached; not charging present: true
+";
+        let mut out = Vec::new();
+
+        collect_macos_load_metrics(uptime, &mut out);
+        collect_macos_vm_metrics(vm_stat, &mut out);
+        collect_macos_filesystem_metrics(df, &mut out);
+        collect_macos_battery_metrics(pmset, &mut out);
+
+        assert!(
+            out.iter()
+                .all(|metric| matches!(metric.source, Source::MacOS))
+        );
+        assert!(
+            out.iter()
+                .any(|metric| metric.name == "system.load.1m" && metric.value == 1.81)
+        );
+        assert!(out.iter().any(|metric| {
+            metric.name == "system.memory.free" && metric.value == 36_408.0 * 16_384.0
+        }));
+        assert!(
+            out.iter()
+                .any(|metric| { metric.name == "system.filesystem.usage" && metric.value == 9.0 })
+        );
+        assert!(
+            out.iter()
+                .any(|metric| metric.name == "macos.battery.charge" && metric.value == 80.0)
+        );
+        assert!(
+            out.iter()
+                .any(|metric| { metric.name == "macos.battery.charging" && metric.value == 0.0 })
         );
     }
 }

@@ -33,7 +33,7 @@ while (!cancellation.IsCancellationRequested)
         var context = new SkidSignalContext(
             root.GetProperty("schema").GetString() ?? string.Empty,
             root.GetProperty("type").GetString() ?? string.Empty,
-            root.GetProperty("signal").Clone());
+            root.GetProperty("signal").GetRawText());
 
         foreach (var extension in extensions)
         {

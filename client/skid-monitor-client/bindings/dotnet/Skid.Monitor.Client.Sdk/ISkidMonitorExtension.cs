@@ -1,26 +1,28 @@
-using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
-namespace Skid.Monitor.Client.Sdk;
-
-public interface ISkidMonitorExtension
+namespace Skid.Monitor.Client.Sdk
 {
-    string Name { get; }
-
-    ValueTask OnSignalAsync(SkidSignalContext context, CancellationToken cancellationToken);
-}
-
-public sealed class SkidSignalContext
-{
-    public SkidSignalContext(string schema, string type, JsonElement signal)
+    public interface ISkidMonitorExtension
     {
-        Schema = schema;
-        Type = type;
-        Signal = signal;
+        string Name { get; }
+
+        ValueTask OnSignalAsync(SkidSignalContext context, CancellationToken cancellationToken);
     }
 
-    public string Schema { get; }
+    public sealed class SkidSignalContext
+    {
+        public SkidSignalContext(string schema, string type, string signalJson)
+        {
+            Schema = schema;
+            Type = type;
+            SignalJson = signalJson;
+        }
 
-    public string Type { get; }
+        public string Schema { get; }
 
-    public JsonElement Signal { get; }
+        public string Type { get; }
+
+        public string SignalJson { get; }
+    }
 }

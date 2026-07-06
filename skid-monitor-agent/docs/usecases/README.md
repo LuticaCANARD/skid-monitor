@@ -17,6 +17,25 @@ NetworkPolicy, overlay VPN 또는 service mesh, authentication, connection limit
 3. Production: ClusterIP ingress에는 NetworkPolicy, restricted security context, Tailscale/WireGuard
    또는 service mesh mTLS, device enrollment, resource requests/limits를 함께 제공한다.
 
+## Native OS 운용 호환성
+
+agent는 Linux 서버만이 아니라 macOS와 Windows host에도 native service로 배포되는 것을 목표로 한다.
+Kubernetes `DaemonSet`은 Linux/Kubernetes 환경의 한 배포 형태일 뿐이며, desktop/workstation/server
+host에서는 각 OS의 서비스 관리자와 package 형식을 따른다.
+
+| OS | 실행 관리자 | package 목표 | host metric 경계 |
+| --- | --- | --- | --- |
+| Linux | `systemd` | `.deb`, `.rpm`, `tar.gz` | `/proc`, `/sys`, cgroup, filesystem/network stats |
+| macOS | `launchd` `LaunchDaemon` | signed/notarized `.pkg` | `uptime`, `vm_stat`, `df`, `pmset` 기반 sampler, future IOKit/sysctl |
+| Windows | Windows Service | signed `.msi` | planned PDH/WMI/CIM/ETW/Event Log adapter |
+
+개발 step:
+
+1. MVP: Linux와 macOS sampler를 같은 pipeline으로 내보내고 source attribute로 구분한다.
+2. 다음 단계: Windows sampler와 source 계약을 추가하고 Windows runner에서 service smoke test를 돌린다.
+3. Production: package signing, install/uninstall, rollback, service restart, `doctor` 또는 `--check`
+   명령을 OS별로 제공한다.
+
 ## Use Case 1: 단일 서버 상태를 바로 관측한다
 
 제품 경험: 운영자가 서버 한 대에 client와 agent를 띄우면 CPU, memory, filesystem, network 같은

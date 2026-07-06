@@ -9,16 +9,19 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 현재 워크스페이스는 일곱 개의 Rust crate와 client-side .NET binding 프로젝트로 나뉜다.
 
 - `skid-protocol`: agent/client/edge adapter가 공유하는 OTLP 기반 직렬화 계약
-- `skid-monitor-agent`: OpenTelemetry 및 Linux host/system 신호를 수집해 `Signal`로 전송하는 agent
+- `skid-monitor-agent`: OpenTelemetry 및 OS별 host/system 신호를 수집해 `Signal`로 전송하는 agent
 - `skid-edge-agent`: edge 물리 계층/환경 신호를 수집해 `Signal`로 전송하는 agent
 - `skid-file-node`: read-only file offer 후보 root를 관측 신호로 알리는 초기 file node
 - `skid-compute-advisor`: 병렬 처리 capability와 route advice 후보를 알리는 초기 compute advisor
 - `skid-monitor-client`: `Signal`을 받아 콘솔에 표시하고 C# 확장 호스트로 전달하는 client
 - `skid-monitor-fe`: egui 기반 control-room desktop frontend
-- `skid-monitor-client/bindings/dotnet/`: 별도 SDK 라이브러리, out-of-process .NET extension host, sample extension
+- `client/skid-monitor-client/bindings/dotnet/`: 별도 SDK 라이브러리, out-of-process .NET extension host, sample extension
 
 배포 경계, 설정/transport, device ingress frame, compute advisor, stream telemetry의 초기 결정은
 [RFC 0001: Initial Skid Monitor Integration](docs/rfcs/0001-initial-skid-monitor-integration.md)를 따른다.
+Kubernetes/Talos 배포는 [docs/deployment.md](docs/deployment.md), Linux/macOS/Windows native agent의
+지속 배포와 자동 업데이트 정책은 [docs/agent-continuous-deployment.md](docs/agent-continuous-deployment.md)를
+따른다.
 클라이언트 UI와 C# extension 개발 방향은 [skid-monitor-client/docs](skid-monitor-client/docs/README.md)에 둔다.
 
 다른 SKID 계열 repository에서 가져온 설계 후보도 먼저 RFC 0001에 통합해 정준 계약을 고정한 뒤,
@@ -43,14 +46,14 @@ SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-fe
 SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 ```
 
-## Server Metrics
+## Host Metrics
 
-`skid-monitor-agent`는 OpenTelemetry 자체 계측뿐 아니라 Linux 서버의 호스트 메트릭도 함께
-수집한다. 현재 수집 범위는 CPU 사용률, load average, 메모리/스왑, uptime, 파일시스템 용량,
-디스크 I/O, 네트워크 I/O, agent 프로세스 메모리/스레드/open FD 상태다.
+`skid-monitor-agent`는 OpenTelemetry 자체 계측뿐 아니라 OS별 호스트 메트릭도 함께 수집한다.
+Linux에서는 CPU 사용률, load average, 메모리/스왑, uptime, 파일시스템 용량, 디스크 I/O,
+네트워크 I/O, agent 프로세스 메모리/스레드/open FD 상태를 `/proc` 계열 interface에서 읽는다.
 
-모든 값은 `Signal::Metrics(ExportMetricsServiceRequest)`로 client에 전송된다. 서버 호스트
-메트릭은 OTLP resource attribute `skid_monitor.source=system`으로 표시된다.
+모든 값은 `Signal::Metrics(ExportMetricsServiceRequest)`로 client에 전송된다. Linux host 메트릭은
+OTLP resource attribute `skid_monitor.source=system`으로 표시된다.
 
 ```sh
 # terminal 1: 사람이 보는 client
@@ -61,6 +64,24 @@ SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 ```
 
 예전 `MONITOR_CAT_*` 환경변수도 당분간 fallback으로 읽는다.
+
+## macOS Native Signals
+
+macOS에서는 Linux `/proc` 경로가 없으므로 `skid-monitor-agent`가 별도 MacBook signal sampler를
+사용한다. 이 sampler는 `uptime`, `vm_stat`, `df`, `pmset`에서 load average, VM/memory 상태,
+root filesystem 사용량, 배터리/AC 전원 상태를 수집한다.
+
+MacBook signal은 OTLP metrics로 보내되 resource attribute `skid_monitor.source=macos`를 붙여
+기존 Linux `system` live signal과 분리한다. 공통 OS 지표는 `system.*` metric 이름을 유지하고,
+Mac 전용 전원/배터리/VM 지표는 `macos.*` prefix를 쓴다. 시리얼 번호, 하드웨어 UUID, 배터리 serial,
+사용자 이름 같은 식별자는 수집하지 않는다.
+
+## Windows Native Agent Target
+
+Windows도 native agent 배포 대상이다. 다만 현재 mainline 구현은 Windows sampler와 `Source::Windows`
+계약을 완료 상태로 두지 않는다. 목표 수집 경로는 PDH/Performance Counters, WMI/CIM, ETW, Event Log,
+Service Control Manager 상태이며, 배포 산출물은 signed `.msi`와 Windows Service를 기준으로 둔다.
+Windows runtime 검증은 Windows runner 또는 실제 Windows host에서 통과한 경우에만 완료로 기록한다.
 
 ## Agent Pipeline Config
 
@@ -133,16 +154,19 @@ SKID_MONITOR_DEVICE_ADDR=127.0.0.1:9101 cargo run -p skid-edge-agent -- --once
 콘솔 렌더링을 유지하고, 확장 호스트에는 newline-delimited JSON 이벤트를 stdin으로 전달한다.
 
 ```sh
-dotnet build skid-monitor-client/bindings/dotnet/Skid.Monitor.Client.ExtensionHost/Skid.Monitor.Client.ExtensionHost.csproj
-dotnet build skid-monitor-client/bindings/dotnet/examples/Skid.Monitor.Client.SampleExtension/Skid.Monitor.Client.SampleExtension.csproj
+dotnet build client/skid-monitor-client/bindings/dotnet/Skid.Monitor.Client.ExtensionHost/Skid.Monitor.Client.ExtensionHost.csproj
+dotnet build client/skid-monitor-client/bindings/dotnet/examples/Skid.Monitor.Client.SampleExtension/Skid.Monitor.Client.SampleExtension.csproj
 
-SKID_MONITOR_DOTNET_EXTENSIONS=./skid-monitor-client/bindings/dotnet/examples/Skid.Monitor.Client.SampleExtension/bin/Debug/net8.0/Skid.Monitor.Client.SampleExtension.dll \
-SKID_MONITOR_EXTENSION_HOST="dotnet run --project skid-monitor-client/bindings/dotnet/Skid.Monitor.Client.ExtensionHost/Skid.Monitor.Client.ExtensionHost.csproj" \
+SKID_MONITOR_DOTNET_EXTENSIONS=./client/skid-monitor-client/bindings/dotnet/examples/Skid.Monitor.Client.SampleExtension/bin/Debug/netstandard2.1/Skid.Monitor.Client.SampleExtension.dll \
+SKID_MONITOR_EXTENSION_HOST="dotnet run --project client/skid-monitor-client/bindings/dotnet/Skid.Monitor.Client.ExtensionHost/Skid.Monitor.Client.ExtensionHost.csproj" \
 cargo run -p skid-monitor-client
 ```
 
-확장 SDK, host, 런타임 sidecar 모델은 [skid-monitor-client/bindings/dotnet/README.md](skid-monitor-client/bindings/dotnet/README.md)와
-[client RFC](skid-monitor-client/docs/rfcs/0002-csharp-extension-developer-experience.md)을 따른다.
+Unity 6 managed plug-in 호환을 위해 확장 SDK와 sample extension은 `netstandard2.1`을 target으로
+둔다. out-of-process extension host는 Unity plug-in이 아니라 sidecar 실행 파일이므로 `net8.0`을 유지한다.
+
+확장 SDK, host, 런타임 sidecar 모델은 [client/skid-monitor-client/bindings/dotnet/README.md](client/skid-monitor-client/bindings/dotnet/README.md)와
+[client RFC](client/skid-monitor-client/docs/rfcs/0002-csharp-extension-developer-experience.md)을 따른다.
 
 ## Planned Nodes
 
