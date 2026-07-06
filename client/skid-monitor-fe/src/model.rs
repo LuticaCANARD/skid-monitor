@@ -1,4 +1,3 @@
-use skid_protocol::protocol::Signal;
 use std::time::Instant;
 
 #[derive(Default)]
@@ -55,13 +54,6 @@ pub(crate) struct AlertChange {
 pub(crate) struct AlertSummary {
     pub(crate) active_count: usize,
     pub(crate) highest_severity: Option<AlertSeverity>,
-}
-
-pub(crate) enum ReceiverMessage {
-    Listening(String),
-    Signal(Signal),
-    Error(String),
-    ExtensionError(String),
 }
 
 pub(crate) struct EventRow {

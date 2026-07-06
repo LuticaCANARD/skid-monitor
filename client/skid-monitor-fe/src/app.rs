@@ -10,11 +10,12 @@ use crate::components::{
 use crate::config;
 use crate::model::{
     AlertChange, AlertSeverity, AlertStatus, AlertTransition, EventRow, MetricSample,
-    ReceiverMessage, SignalCounters, Status,
+    SignalCounters, Status,
 };
-use crate::signal::{metric_samples, spawn_receiver};
+use crate::signal::metric_samples;
 use crate::utils::push_capped;
 use eframe::egui;
+use skid_monitor_client::receiver_loop::{ReceiverMessage, spawn_receiver};
 use skid_protocol::protocol::Signal;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::mpsc::Receiver;

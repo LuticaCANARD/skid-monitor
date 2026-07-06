@@ -1,68 +1,8 @@
 use crate::config;
-use crate::model::{MetricSample, ReceiverMessage};
+use crate::model::MetricSample;
 use crate::utils::{format_f64, format_metric_value};
-use skid_monitor_client::extension::ExtensionHost;
-use skid_monitor_client::receiver::{listen_addr, Receiver as SignalReceiver};
-use skid_protocol::otlp::tonic::common::v1::{any_value, AnyValue, KeyValue};
-use skid_protocol::otlp::tonic::metrics::v1::{metric, number_data_point, Metric as OtlpMetric};
-use std::sync::mpsc::{self, Receiver};
-use std::thread;
-
-pub(crate) fn spawn_receiver() -> Receiver<ReceiverMessage> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let addr = listen_addr();
-        let mut extension = match ExtensionHost::from_env() {
-            Ok(host) => host,
-            Err(err) => {
-                let _ = tx.send(ReceiverMessage::ExtensionError(format!(
-                    "failed to start extension host: {err}"
-                )));
-                None
-            }
-        };
-
-        let receiver = match SignalReceiver::bind(&addr) {
-            Ok(receiver) => receiver,
-            Err(err) => {
-                let _ = tx.send(ReceiverMessage::Error(format!(
-                    "failed to bind {addr}: {err}"
-                )));
-                return;
-            }
-        };
-
-        if tx.send(ReceiverMessage::Listening(addr)).is_err() {
-            return;
-        }
-
-        loop {
-            match receiver.recv() {
-                Ok(signal) => {
-                    if let Some(extension) = extension.as_mut() {
-                        if let Err(err) = extension.publish_signal(&signal) {
-                            let _ = tx.send(ReceiverMessage::ExtensionError(format!(
-                                "failed to publish to extension host: {err}"
-                            )));
-                        }
-                    }
-                    if tx.send(ReceiverMessage::Signal(signal)).is_err() {
-                        break;
-                    }
-                }
-                Err(err) => {
-                    if tx
-                        .send(ReceiverMessage::Error(format!("receive error: {err}")))
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-    });
-    rx
-}
+use skid_protocol::otlp::tonic::common::v1::{AnyValue, KeyValue, any_value};
+use skid_protocol::otlp::tonic::metrics::v1::{Metric as OtlpMetric, metric, number_data_point};
 
 pub(crate) fn metric_samples(
     request: &skid_protocol::otlp::ExportMetricsServiceRequest,

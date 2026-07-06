@@ -16,5 +16,6 @@
 ## 결과
 
 - `client/skid-monitor-fe`는 workspace Rust crate가 된다.
-- TCP signal 수신은 기존 `skid-monitor-client::receiver`를 재사용한다.
+- TCP signal bind/read는 기존 `skid-monitor-client::receiver`를 재사용하고, 앱용 receive loop는
+  `skid-monitor-client::receiver_loop`를 사용한다.
 - Tauri/Svelte, Bun, Vite, WebKitGTK 의존성은 frontend 경계에서 제거한다.

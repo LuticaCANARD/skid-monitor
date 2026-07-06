@@ -45,8 +45,12 @@ skid-monitor-agent
         v
 skid-monitor-client::receiver
         |
+        v
+skid-monitor-client::receiver_loop
+        |
         +-- skid-monitor-fe dashboard
         +-- optional extension host
+        +-- future skid-monitor-tui
 ```
 
 The client-side invariant is small: if a `Signal` reaches the TCP receiver, client surfaces render or forward it.
@@ -154,6 +158,7 @@ OTLP directly.
 ## MVP Scope
 
 1. Use `skid-monitor-fe` as the primary visual client.
-2. Keep `skid-monitor-client::receiver` as the shared TCP Signal receiver.
-3. Document that client visibility requires `skid_client` in the relevant agent pipeline.
-4. Add future agent pipeline health signals in a separate RFC if operator feedback becomes necessary.
+2. Keep `skid-monitor-client::receiver` as the shared TCP bind/read layer.
+3. Keep `skid-monitor-client::receiver_loop` as the shared app-facing receive loop for GUI/TUI clients.
+4. Document that client visibility requires `skid_client` in the relevant agent pipeline.
+5. Add future agent pipeline health signals in a separate RFC if operator feedback becomes necessary.

@@ -17,7 +17,8 @@ VRM 아바타는 이 기능의 핵심 로직이 아니라 알람을 사용자에
 
 알람 기능은 다음 4단계로 분리한다.
 
-1. 신호 수집: 기존 `ReceiverMessage::Signal`과 `MetricSample` 변환을 사용한다.
+1. 신호 수집: `skid-monitor-client::receiver_loop::ReceiverMessage::Signal`과 `MetricSample` 변환을
+   사용한다.
 2. rule 평가: metric 이름, source, attribute, numeric value를 기준으로 알람 후보를 만든다.
 3. 상태 전이: 같은 문제가 반복될 때 `normal`, `pending`, `firing`, `acknowledged`, `resolved` 상태를 관리한다.
 4. presenter 전파: dashboard badge, event log, message, VRM avatar 같은 표현 계층으로 알람 상태를 전달한다.
