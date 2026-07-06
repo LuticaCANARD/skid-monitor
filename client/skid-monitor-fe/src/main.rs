@@ -1,3 +1,4 @@
+mod alert;
 mod app;
 mod components;
 mod config;

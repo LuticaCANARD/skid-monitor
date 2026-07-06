@@ -1,5 +1,5 @@
 use crate::config;
-use crate::model::Status;
+use crate::model::{AlertSeverity, AlertSummary, Status};
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 use std::collections::VecDeque;
 
@@ -87,11 +87,56 @@ pub(crate) fn status_badge_width(ui: &egui::Ui, status: &Status) -> f32 {
     text_width + f32::from(config::STATUS_BADGE_MARGIN_X) * 2.0
 }
 
+pub(crate) fn alert_badge(ui: &mut egui::Ui, summary: AlertSummary) {
+    let (label, color) = alert_badge_label(summary);
+
+    egui::Frame::default()
+        .fill(config::ALERT_BADGE_BACKGROUND)
+        .stroke(Stroke::new(config::ALERT_BADGE_BORDER_WIDTH, color))
+        .corner_radius(egui::CornerRadius::same(config::ALERT_BADGE_RADIUS))
+        .inner_margin(egui::Margin::symmetric(
+            config::ALERT_BADGE_MARGIN_X,
+            config::ALERT_BADGE_MARGIN_Y,
+        ))
+        .show(ui, |ui| {
+            ui.label(RichText::new(label).monospace().color(color));
+        });
+}
+
+pub(crate) fn alert_badge_width(ui: &egui::Ui, summary: AlertSummary) -> f32 {
+    let (label, color) = alert_badge_label(summary);
+    let font_id = egui::TextStyle::Monospace.resolve(ui.style());
+    let text_width = ui.painter().layout_no_wrap(label, font_id, color).size().x;
+
+    text_width + f32::from(config::ALERT_BADGE_MARGIN_X) * 2.0
+}
+
+pub(crate) fn alert_color(severity: AlertSeverity) -> Color32 {
+    match severity {
+        AlertSeverity::Warning => config::ALERT_WARNING_COLOR,
+        AlertSeverity::Critical => config::ALERT_CRITICAL_COLOR,
+    }
+}
+
 fn status_badge_label(status: &Status) -> (String, Color32) {
     match status {
         Status::Starting => ("starting".to_string(), config::STATUS_STARTING_COLOR),
         Status::Listening(addr) => (format!("listening {addr}"), config::STATUS_LISTENING_COLOR),
         Status::Error(error) => (error.clone(), config::STATUS_ERROR_COLOR),
+    }
+}
+
+fn alert_badge_label(summary: AlertSummary) -> (String, Color32) {
+    match summary.highest_severity {
+        Some(AlertSeverity::Critical) => (
+            format!("critical x{}", summary.active_count),
+            config::ALERT_CRITICAL_COLOR,
+        ),
+        Some(AlertSeverity::Warning) => (
+            format!("warning x{}", summary.active_count),
+            config::ALERT_WARNING_COLOR,
+        ),
+        None => ("alerts clear".to_string(), config::ALERT_CLEAR_COLOR),
     }
 }
 
@@ -157,6 +202,8 @@ pub(crate) fn kind_color(kind: &str) -> Color32 {
         "logs" => config::EVENT_LOGS_COLOR,
         "error" => config::EVENT_ERROR_COLOR,
         "extension" => config::EVENT_EXTENSION_COLOR,
+        "alert" => config::EVENT_ALERT_COLOR,
+        "resolved" => config::EVENT_RESOLVED_COLOR,
         _ => config::EVENT_DEFAULT_COLOR,
     }
 }

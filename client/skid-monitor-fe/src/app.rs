@@ -1,3 +1,4 @@
+use crate::alert::AlertStore;
 use crate::components::{
     counters, event_log, header,
     layout::{
@@ -7,7 +8,10 @@ use crate::components::{
     metrics, sources, trends,
 };
 use crate::config;
-use crate::model::{EventRow, MetricSample, ReceiverMessage, SignalCounters, Status};
+use crate::model::{
+    AlertChange, AlertSeverity, AlertStatus, AlertTransition, EventRow, MetricSample,
+    ReceiverMessage, SignalCounters, Status,
+};
 use crate::signal::{metric_samples, spawn_receiver};
 use crate::utils::push_capped;
 use eframe::egui;
@@ -25,6 +29,7 @@ pub(crate) struct ControlRoomApp {
     metrics: VecDeque<MetricSample>,
     metric_history: BTreeMap<String, VecDeque<f64>>,
     source_counts: BTreeMap<String, usize>,
+    alerts: AlertStore,
 }
 
 #[derive(Clone, Copy)]
@@ -74,7 +79,14 @@ impl PanelTemplate for MainPanel {
                 &app.metrics,
                 &app.metric_history,
             ),
-            Self::Metrics => metrics::show(ui, compact, panel_width, panel_height, &app.metrics),
+            Self::Metrics => metrics::show(
+                ui,
+                compact,
+                panel_width,
+                panel_height,
+                &app.metrics,
+                &app.alerts,
+            ),
         }
     }
 }
@@ -82,6 +94,13 @@ impl PanelTemplate for MainPanel {
 const STACKED_MAIN_PANELS: [MainPanel; 3] =
     [MainPanel::Sources, MainPanel::Trends, MainPanel::Metrics];
 const GRAPH_MAIN_PANELS: [MainPanel; 2] = [MainPanel::Sources, MainPanel::Trends];
+
+fn severity_label(severity: AlertSeverity) -> &'static str {
+    match severity {
+        AlertSeverity::Warning => "warning",
+        AlertSeverity::Critical => "critical",
+    }
+}
 
 impl ControlRoomApp {
     pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -100,6 +119,7 @@ impl ControlRoomApp {
             metrics: VecDeque::new(),
             metric_history: BTreeMap::new(),
             source_counts: BTreeMap::new(),
+            alerts: AlertStore::default(),
         }
     }
 
@@ -109,14 +129,31 @@ impl ControlRoomApp {
                 ReceiverMessage::Listening(addr) => {
                     self.status = Status::Listening(addr.clone());
                     self.push_event("receiver", format!("listening on {addr}"));
+                    let change = self
+                        .alerts
+                        .observe_receiver_recovered("receiver is listening");
+                    self.push_alert_change(change);
                 }
-                ReceiverMessage::Signal(signal) => self.ingest_signal(signal),
+                ReceiverMessage::Signal(signal) => {
+                    let change = self
+                        .alerts
+                        .observe_receiver_recovered("receiver received a signal");
+                    self.push_alert_change(change);
+                    self.ingest_signal(signal);
+                }
                 ReceiverMessage::Error(error) => {
                     self.status = Status::Error(error.clone());
                     self.push_event("error", error);
+                    let change = match &self.status {
+                        Status::Error(error) => self.alerts.observe_receiver_error(error),
+                        Status::Starting | Status::Listening(_) => None,
+                    };
+                    self.push_alert_change(change);
                 }
                 ReceiverMessage::ExtensionError(error) => {
-                    self.push_event("extension", error);
+                    self.push_event("extension", error.clone());
+                    let change = self.alerts.observe_extension_error(&error);
+                    self.push_alert_change(change);
                 }
             }
         }
@@ -140,6 +177,8 @@ impl ControlRoomApp {
                             config::MAX_HISTORY_POINTS,
                         );
                     }
+                    let change = self.alerts.observe_metric(&sample);
+                    self.push_alert_change(change);
                     push_capped(&mut self.metrics, sample, config::MAX_METRICS);
                 }
                 self.push_event(
@@ -185,6 +224,32 @@ impl ControlRoomApp {
                 message: message.into(),
             },
             config::MAX_EVENTS,
+        );
+    }
+
+    fn push_alert_change(&mut self, change: Option<AlertChange>) {
+        let Some(change) = change else {
+            return;
+        };
+        let status = match change.snapshot.status {
+            AlertStatus::Firing => "firing",
+            AlertStatus::Resolved => "resolved",
+        };
+        let kind = match change.transition {
+            AlertTransition::Fired => "alert",
+            AlertTransition::Resolved => "resolved",
+        };
+        let severity = severity_label(change.snapshot.severity);
+
+        self.push_event(
+            kind,
+            format!(
+                "{status} {severity} {} [{}] from {}: {}",
+                change.snapshot.summary,
+                change.snapshot.rule_id,
+                change.snapshot.source,
+                change.snapshot.detail
+            ),
         );
     }
 
@@ -265,7 +330,13 @@ impl eframe::App for ControlRoomApp {
                             let layout = LayoutMode::for_width(panel_width);
                             let compact = layout.is_compact();
 
-                            header::show(ui, compact, &self.status, self.started_at.elapsed());
+                            header::show(
+                                ui,
+                                compact,
+                                &self.status,
+                                self.alerts.summary(),
+                                self.started_at.elapsed(),
+                            );
                             ui.add_space(config::HEADER_COUNTER_GAP);
                             counters::show(ui, &self.counters);
                             ui.add_space(config::SECTION_GAP);

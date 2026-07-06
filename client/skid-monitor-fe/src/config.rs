@@ -5,7 +5,7 @@ pub(crate) const WINDOW_TITLE: &str = "Skid Monitor Control Room";
 pub(crate) const APP_TITLE: &str = "Skid Monitor";
 pub(crate) const APP_SUBTITLE: &str = "control room";
 pub(crate) const WINDOW_INITIAL_SIZE: [f32; 2] = [1180.0, 760.0];
-pub(crate) const WINDOW_MIN_SIZE: [f32; 2] = [940.0, 620.0];
+pub(crate) const WINDOW_MIN_SIZE: [f32; 2] = [280.0, 640.0];
 pub(crate) const REPAINT_INTERVAL_MS: u64 = 250;
 
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
@@ -38,7 +38,7 @@ pub(crate) const MAX_METRICS: usize = 512;
 pub(crate) const MAX_HISTORY_POINTS: usize = 180;
 
 pub(crate) const CONTENT_MAX_WIDTH: f32 = 1320.0;
-pub(crate) const CONTENT_SIDE_MARGIN_MIN: f32 = 18.0;
+pub(crate) const CONTENT_SIDE_MARGIN_MIN: f32 = 12.0;
 pub(crate) const CONTENT_SIDE_MARGIN_MAX: f32 = 72.0;
 pub(crate) const CONTENT_SIDE_MARGIN_RATIO: f32 = 0.035;
 pub(crate) const CONTENT_BOTTOM_MARGIN_MIN: f32 = 18.0;
@@ -96,18 +96,31 @@ pub(crate) const METRICS_TABLE_MIN_WIDTH: f32 = 460.0;
 pub(crate) const METRICS_WIDE_SCROLL_MIN_WIDTH: f32 = 920.0;
 pub(crate) const METRICS_WIDE_MIN_COL_WIDTH: f32 = 80.0;
 pub(crate) const METRICS_COMPACT_VALUE_WIDTH_RATIO: f32 = 0.28;
-pub(crate) const METRICS_COMPACT_VALUE_WIDTH_MIN: f32 = 96.0;
+pub(crate) const METRICS_COMPACT_VALUE_WIDTH_MIN: f32 = 72.0;
 pub(crate) const METRICS_COMPACT_VALUE_WIDTH_MAX: f32 = 140.0;
-pub(crate) const METRICS_COMPACT_NAME_MIN_WIDTH: f32 = 120.0;
+pub(crate) const METRICS_COMPACT_NAME_MIN_WIDTH: f32 = 72.0;
 pub(crate) const METRICS_COMPACT_ROW_HEIGHT: f32 = 22.0;
 pub(crate) const METRICS_COMPACT_NAME_CHAR_WIDTH: f32 = 8.0;
-pub(crate) const METRICS_COMPACT_NAME_CHARS_MIN: usize = 18;
+pub(crate) const METRICS_COMPACT_NAME_CHARS_MIN: usize = 8;
 pub(crate) const METRICS_COMPACT_NAME_CHARS_MAX: usize = 64;
 pub(crate) const METRICS_COMPACT_ROW_AREA_MIN_HEIGHT: f32 = 80.0;
 pub(crate) const METRICS_COMPACT_ROW_EVEN: Color32 = Color32::from_rgb(18, 22, 29);
 pub(crate) const METRICS_COMPACT_ROW_ODD: Color32 = Color32::from_rgb(14, 17, 23);
 
 pub(crate) const EVENT_LOG_HEIGHT_MIN: f32 = 120.0;
+
+pub(crate) const ALERT_CPU_USAGE_WARNING_THRESHOLD: f64 = 90.0;
+pub(crate) const ALERT_MEMORY_USAGE_WARNING_THRESHOLD: f64 = 90.0;
+pub(crate) const ALERT_ROW_WARNING: Color32 = Color32::from_rgb(45, 37, 22);
+pub(crate) const ALERT_ROW_CRITICAL: Color32 = Color32::from_rgb(48, 25, 30);
+pub(crate) const ALERT_CLEAR_COLOR: Color32 = Color32::from_rgb(76, 175, 112);
+pub(crate) const ALERT_WARNING_COLOR: Color32 = Color32::from_rgb(210, 168, 74);
+pub(crate) const ALERT_CRITICAL_COLOR: Color32 = Color32::from_rgb(235, 92, 92);
+pub(crate) const ALERT_BADGE_BACKGROUND: Color32 = Color32::from_rgb(25, 31, 42);
+pub(crate) const ALERT_BADGE_BORDER_WIDTH: f32 = 1.0;
+pub(crate) const ALERT_BADGE_RADIUS: u8 = 6;
+pub(crate) const ALERT_BADGE_MARGIN_X: i8 = 10;
+pub(crate) const ALERT_BADGE_MARGIN_Y: i8 = 5;
 
 pub(crate) const PAGE_BACKGROUND: Color32 = Color32::from_rgb(15, 18, 24);
 pub(crate) const TITLE_COLOR: Color32 = Color32::from_rgb(231, 238, 247);
@@ -147,6 +160,8 @@ pub(crate) const EVENT_TRACES_COLOR: Color32 = Color32::from_rgb(193, 145, 255);
 pub(crate) const EVENT_LOGS_COLOR: Color32 = Color32::from_rgb(244, 178, 93);
 pub(crate) const EVENT_ERROR_COLOR: Color32 = Color32::from_rgb(235, 92, 92);
 pub(crate) const EVENT_EXTENSION_COLOR: Color32 = Color32::from_rgb(210, 168, 74);
+pub(crate) const EVENT_ALERT_COLOR: Color32 = Color32::from_rgb(235, 92, 92);
+pub(crate) const EVENT_RESOLVED_COLOR: Color32 = Color32::from_rgb(76, 175, 112);
 pub(crate) const EVENT_DEFAULT_COLOR: Color32 = Color32::from_gray(150);
 
 pub(crate) const METRIC_RESOURCE_SOURCE_KEY: &str = "skid_monitor.source";

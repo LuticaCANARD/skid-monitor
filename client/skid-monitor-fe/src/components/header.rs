@@ -1,19 +1,27 @@
-use crate::components::primitives::{status_badge, status_badge_width};
+use crate::components::primitives::{
+    alert_badge, alert_badge_width, status_badge, status_badge_width,
+};
 use crate::config;
-use crate::model::Status;
+use crate::model::{AlertSummary, Status};
 use crate::utils::format_duration;
 use eframe::egui::{self, RichText};
 use std::time::Duration;
 
-pub(crate) fn show(ui: &mut egui::Ui, compact: bool, status: &Status, uptime: Duration) {
+pub(crate) fn show(
+    ui: &mut egui::Ui,
+    compact: bool,
+    status: &Status,
+    alert_summary: AlertSummary,
+    uptime: Duration,
+) {
     if compact {
-        show_compact(ui, status, uptime);
+        show_compact(ui, status, alert_summary, uptime);
     } else {
-        show_wide(ui, status, uptime);
+        show_wide(ui, status, alert_summary, uptime);
     }
 }
 
-fn show_wide(ui: &mut egui::Ui, status: &Status, uptime: Duration) {
+fn show_wide(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary, uptime: Duration) {
     let available_width = ui.available_width().max(1.0);
     let header_height =
         (config::APP_TITLE_SIZE + config::APP_SUBTITLE_SIZE + ui.spacing().item_spacing.y)
@@ -24,8 +32,10 @@ fn show_wide(ui: &mut egui::Ui, status: &Status, uptime: Duration) {
     );
     let gap = ui.spacing().item_spacing.x;
     let status_width = status_badge_width(ui, status);
+    let alert_width = alert_badge_width(ui, alert_summary);
+    let badge_width = status_width + gap + alert_width;
     let status_rect =
-        egui::Rect::from_center_size(rect.center(), egui::vec2(status_width, header_height));
+        egui::Rect::from_center_size(rect.center(), egui::vec2(badge_width, header_height));
     let title_rect = egui::Rect::from_min_max(
         rect.left_top(),
         egui::pos2(status_rect.left() - gap, rect.bottom()),
@@ -49,15 +59,18 @@ fn show_wide(ui: &mut egui::Ui, status: &Status, uptime: Duration) {
             .max_rect(status_rect)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
+    status_ui.spacing_mut().item_spacing.x = gap;
     status_badge(&mut status_ui, status);
+    alert_badge(&mut status_ui, alert_summary);
 
     paint_uptime_label(ui, uptime_rect.right_center(), uptime);
 }
 
-fn show_compact(ui: &mut egui::Ui, status: &Status, uptime: Duration) {
+fn show_compact(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary, uptime: Duration) {
     ui.horizontal_wrapped(|ui| {
         title(ui);
         status_badge(ui, status);
+        alert_badge(ui, alert_summary);
         uptime_label(ui, uptime);
     });
 }
