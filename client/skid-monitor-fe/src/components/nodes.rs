@@ -1,9 +1,11 @@
 use crate::components::layout::{panel_body_height, panel_frame};
-use crate::components::primitives::table_header;
+use crate::components::primitives::{alert_color, table_header};
 use crate::config;
+use crate::edge::{EdgeSignalDecoration, EdgeSignalDecorations};
+use crate::model::AlertSeverity;
 use crate::model::NodeSummary;
 use crate::utils::{format_duration, shorten};
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, Color32, RichText};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
@@ -11,6 +13,7 @@ pub(crate) fn show(
     ui: &mut egui::Ui,
     compact: bool,
     nodes: &BTreeMap<String, NodeSummary>,
+    decorations: &EdgeSignalDecorations,
     panel_width: f32,
     max_height: f32,
 ) {
@@ -26,9 +29,21 @@ pub(crate) fn show(
         }
 
         if compact {
-            compact_node_table(ui, inner_size.x, panel_body_height(inner_size.y), nodes);
+            compact_node_table(
+                ui,
+                inner_size.x,
+                panel_body_height(inner_size.y),
+                nodes,
+                decorations,
+            );
         } else {
-            wide_node_table(ui, inner_size.x, panel_body_height(inner_size.y), nodes);
+            wide_node_table(
+                ui,
+                inner_size.x,
+                panel_body_height(inner_size.y),
+                nodes,
+                decorations,
+            );
         }
     });
 }
@@ -38,16 +53,20 @@ fn compact_node_table(
     panel_width: f32,
     max_height: f32,
     nodes: &BTreeMap<String, NodeSummary>,
+    decorations: &EdgeSignalDecorations,
 ) {
     let row_width = panel_width.max(1.0);
-    let node_width = (row_width * 0.44).clamp(96.0, 220.0);
-    let signals_width = (row_width * 0.22).clamp(64.0, 110.0);
-    let last_width =
-        (row_width - node_width - signals_width - ui.spacing().item_spacing.x * 2.0).max(88.0);
+    let marker_width = config::NODE_EDGE_MARKER_WIDTH;
+    let spacing = ui.spacing().item_spacing.x;
+    let usable_width = (row_width - marker_width - spacing * 3.0).max(1.0);
+    let node_width = (usable_width * 0.42).clamp(82.0, 220.0);
+    let signals_width = (usable_width * 0.22).clamp(52.0, 110.0);
+    let last_width = (usable_width - node_width - signals_width).max(72.0);
     let now = Instant::now();
     let rows = recent_rows(nodes);
 
     ui.horizontal(|ui| {
+        ui.add_sized([marker_width, 20.0], egui::Label::new(""));
         ui.add_sized([node_width, 20.0], egui::Label::new(header_text("node")));
         ui.add_sized(
             [signals_width, 20.0],
@@ -63,10 +82,16 @@ fn compact_node_table(
         .max_height(max_height)
         .show(ui, |ui| {
             for row in rows {
+                let decoration = decorations.get(&row.endpoint, &row.node);
                 ui.horizontal(|ui| {
+                    paint_edge_marker(ui, decoration);
                     ui.add_sized(
                         [node_width, 22.0],
-                        egui::Label::new(RichText::new(shorten(&row.node, 24)).monospace()),
+                        egui::Label::new(
+                            RichText::new(shorten(&row.node, 24))
+                                .monospace()
+                                .color(edge_color(decoration)),
+                        ),
                     );
                     ui.add_sized(
                         [signals_width, 22.0],
@@ -88,8 +113,9 @@ fn wide_node_table(
     panel_width: f32,
     max_height: f32,
     nodes: &BTreeMap<String, NodeSummary>,
+    decorations: &EdgeSignalDecorations,
 ) {
-    let table_width = panel_width.max(920.0);
+    let table_width = panel_width.max(980.0);
     let now = Instant::now();
     let rows = recent_rows(nodes);
 
@@ -105,6 +131,7 @@ fn wide_node_table(
                 .min_col_width(72.0)
                 .show(ui, |ui| {
                     table_header(ui, "node");
+                    table_header(ui, "state");
                     table_header(ui, "endpoint");
                     table_header(ui, "source");
                     table_header(ui, "service");
@@ -117,7 +144,9 @@ fn wide_node_table(
                     ui.end_row();
 
                     for row in rows {
+                        let decoration = decorations.get(&row.endpoint, &row.node);
                         ui.label(RichText::new(&row.node).monospace());
+                        ui.label(edge_label(decoration));
                         ui.label(RichText::new(&row.endpoint).monospace());
                         ui.label(RichText::new(&row.source).monospace());
                         ui.label(RichText::new(&row.service).monospace());
@@ -160,4 +189,36 @@ fn last_cell(row: &NodeSummary, now: Instant) -> String {
 
 fn age(row: &NodeSummary, now: Instant) -> String {
     format_duration(now.saturating_duration_since(row.last_seen))
+}
+
+fn paint_edge_marker(ui: &mut egui::Ui, decoration: Option<&EdgeSignalDecoration>) {
+    let desired = egui::vec2(
+        config::NODE_EDGE_MARKER_WIDTH,
+        config::NODE_EDGE_MARKER_HEIGHT,
+    );
+    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+    ui.painter()
+        .rect_filled(rect, egui::CornerRadius::same(2), edge_color(decoration));
+}
+
+fn edge_label(decoration: Option<&EdgeSignalDecoration>) -> RichText {
+    let label = match decoration.and_then(|edge| edge.severity) {
+        Some(AlertSeverity::Critical) => "critical".to_string(),
+        Some(AlertSeverity::Warning) => "warning".to_string(),
+        None => decoration
+            .map(|edge| shorten(&edge.last_signal, 14))
+            .unwrap_or_else(|| "clear".to_string()),
+    };
+
+    RichText::new(label)
+        .monospace()
+        .color(edge_color(decoration))
+}
+
+fn edge_color(decoration: Option<&EdgeSignalDecoration>) -> Color32 {
+    match decoration.and_then(|edge| edge.severity) {
+        Some(severity) => alert_color(severity),
+        None if decoration.is_some() => config::STATUS_LISTENING_COLOR,
+        None => config::MUTED_TEXT_COLOR,
+    }
 }

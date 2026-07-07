@@ -1,6 +1,6 @@
 use crate::config;
 use std::collections::VecDeque;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) fn stabilize_linux_graphics_env() {
@@ -128,6 +128,47 @@ pub(crate) fn format_duration(duration: Duration) -> String {
     }
 }
 
+pub(crate) fn format_event_time(time: SystemTime) -> String {
+    let Ok(duration) = time.duration_since(UNIX_EPOCH) else {
+        return "--:--:--".to_string();
+    };
+
+    #[cfg(unix)]
+    {
+        if let Some(time) = local_clock_time(duration) {
+            return time;
+        }
+    }
+
+    utc_clock_time(duration)
+}
+
+#[cfg(unix)]
+fn local_clock_time(duration: Duration) -> Option<String> {
+    let seconds = libc::time_t::try_from(duration.as_secs()).ok()?;
+    let mut local_time = std::mem::MaybeUninit::<libc::tm>::uninit();
+    // localtime_r writes a libc tm into our stack slot for the provided epoch seconds.
+    let result = unsafe { libc::localtime_r(&seconds, local_time.as_mut_ptr()) };
+    if result.is_null() {
+        return None;
+    }
+
+    let local_time = unsafe { local_time.assume_init() };
+    Some(format!(
+        "{:02}:{:02}:{:02}",
+        local_time.tm_hour, local_time.tm_min, local_time.tm_sec
+    ))
+}
+
+fn utc_clock_time(duration: Duration) -> String {
+    let seconds = duration.as_secs() % (24 * 60 * 60);
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
 pub(crate) fn shorten(value: &str, max_chars: usize) -> String {
     let mut out = String::new();
     for (index, ch) in value.chars().enumerate() {
@@ -159,5 +200,13 @@ mod tests {
             format_metric_value(17_470_000.0, config::METRIC_BYTE_UNIT),
             "16.66 MiB"
         );
+    }
+
+    #[test]
+    fn formats_event_time_as_fixed_clock_time() {
+        let time = format_event_time(UNIX_EPOCH + Duration::from_secs(3_723));
+
+        assert_eq!(time.len(), 8);
+        assert_eq!(time.chars().filter(|ch| *ch == ':').count(), 2);
     }
 }

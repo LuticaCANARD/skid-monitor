@@ -2,7 +2,6 @@ use crate::components::layout::{panel_body_height, panel_frame};
 use crate::components::primitives::kind_color;
 use crate::config;
 use crate::model::EventRow;
-use crate::utils::format_duration;
 use eframe::egui::{self, RichText};
 use std::collections::VecDeque;
 
@@ -24,7 +23,7 @@ pub(crate) fn show(
                 for event in events {
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new(format_duration(event.at.elapsed()))
+                            RichText::new(&event.time)
                                 .monospace()
                                 .color(config::PLACEHOLDER_TEXT_COLOR),
                         );

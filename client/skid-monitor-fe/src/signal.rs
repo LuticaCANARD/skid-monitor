@@ -211,7 +211,7 @@ fn metric_sample(
         endpoint: listener.to_string(),
         kind: kind.to_string(),
         attributes: metric_attributes(service, scope, point_attrs),
-        trend_key: trend_key(name, source, &node, point_attrs),
+        trend_key: trend_key(listener, name, source, &node, point_attrs),
     }
 }
 
@@ -232,8 +232,14 @@ fn metric_attributes(service: &str, scope: &str, attributes: &[KeyValue]) -> Str
     parts.join(", ")
 }
 
-fn trend_key(name: &str, source: &str, node: &str, attributes: &[KeyValue]) -> String {
-    let mut key = format!("{source}/{node}/{name}");
+fn trend_key(
+    listener: &str,
+    name: &str,
+    source: &str,
+    node: &str,
+    attributes: &[KeyValue],
+) -> String {
+    let mut key = format!("{listener}/{source}/{node}/{name}");
     for attribute in attributes.iter().take(config::METRIC_TREND_ATTR_COUNT) {
         key.push(' ');
         key.push_str(&attribute.key);
@@ -353,5 +359,27 @@ mod tests {
         let samples = metric_samples(&request, "127.0.0.1:9001");
 
         assert_eq!(samples[0].node, "skid-monitor-agent@127.0.0.1:9001");
+    }
+
+    #[test]
+    fn metric_trend_keys_include_listener_endpoint() {
+        let request = export_metrics(
+            vec![Metric {
+                name: "system.cpu.usage".to_string(),
+                value: 12.0,
+                source: Source::System,
+                unit: Some("%".to_string()),
+                kind: MetricKind::Gauge,
+                attributes: Vec::new(),
+            }],
+            "skid-monitor-agent",
+            "test-scope",
+        );
+
+        let first = metric_samples(&request, "127.0.0.1:9000");
+        let second = metric_samples(&request, "127.0.0.1:9001");
+
+        assert_ne!(first[0].trend_key, second[0].trend_key);
+        assert!(first[0].trend_key.starts_with("127.0.0.1:9000/"));
     }
 }

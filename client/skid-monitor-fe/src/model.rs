@@ -34,6 +34,8 @@ pub(crate) struct AlertSnapshot {
     pub(crate) rule_id: String,
     pub(crate) severity: AlertSeverity,
     pub(crate) status: AlertStatus,
+    pub(crate) endpoint: String,
+    pub(crate) node: String,
     pub(crate) source: String,
     pub(crate) summary: String,
     pub(crate) detail: String,
@@ -56,12 +58,14 @@ pub(crate) struct AlertSummary {
     pub(crate) highest_severity: Option<AlertSeverity>,
 }
 
+#[derive(Clone)]
 pub(crate) struct EventRow {
-    pub(crate) at: Instant,
+    pub(crate) time: String,
     pub(crate) kind: String,
     pub(crate) message: String,
 }
 
+#[derive(Clone)]
 pub(crate) struct NodeSummary {
     pub(crate) node: String,
     pub(crate) endpoint: String,
@@ -75,6 +79,7 @@ pub(crate) struct NodeSummary {
     pub(crate) last_seen: Instant,
 }
 
+#[derive(Clone)]
 pub(crate) struct MetricSample {
     pub(crate) name: String,
     pub(crate) value: String,

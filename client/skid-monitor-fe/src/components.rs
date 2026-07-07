@@ -1,3 +1,4 @@
+pub(crate) mod agents;
 pub(crate) mod counters;
 pub(crate) mod event_log;
 pub(crate) mod header;

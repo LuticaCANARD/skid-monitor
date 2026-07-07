@@ -26,6 +26,7 @@ impl LayoutMode {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PanelLimits {
+    pub(crate) main_height: f32,
     pub(crate) sources_height: f32,
     pub(crate) trends_height: f32,
     pub(crate) metrics_height: f32,
@@ -33,11 +34,11 @@ pub(crate) struct PanelLimits {
 }
 
 impl PanelLimits {
-    pub(crate) fn for_remaining_height(height: f32, layout: LayoutMode) -> Self {
+    pub(crate) fn for_remaining_height(height: f32, layout: LayoutMode, section_gap: f32) -> Self {
         let available_height = height.max(0.0);
         let main_height = config::MAIN_AREA_HEIGHT
-            .min((available_height - config::EVENT_LOG_HEIGHT_MIN - config::SECTION_GAP).max(0.0));
-        let event_log_height = (available_height - main_height - config::SECTION_GAP).max(0.0);
+            .min((available_height - config::EVENT_LOG_HEIGHT_MIN - section_gap).max(0.0));
+        let event_log_height = (available_height - main_height - section_gap).max(0.0);
 
         match layout {
             LayoutMode::Split => {
@@ -48,9 +49,10 @@ impl PanelLimits {
                     config::SOURCES_HEIGHT_MAX,
                 )
                 .min(main_height);
-                let trends_height = (main_height - sources_height - config::SECTION_GAP).max(0.0);
+                let trends_height = (main_height - sources_height - section_gap).max(0.0);
 
                 Self {
+                    main_height,
                     sources_height,
                     trends_height,
                     metrics_height: main_height,
@@ -58,7 +60,7 @@ impl PanelLimits {
                 }
             }
             LayoutMode::Stacked | LayoutMode::Compact => {
-                let panel_budget = (main_height - config::SECTION_GAP * 2.0).max(0.0);
+                let panel_budget = (main_height - section_gap * 2.0).max(0.0);
                 let sources_height = clamped_extent(
                     panel_budget,
                     config::SOURCES_HEIGHT_RATIO,
@@ -76,6 +78,7 @@ impl PanelLimits {
                 let trends_height = (panel_budget - sources_height - metrics_height).max(0.0);
 
                 Self {
+                    main_height,
                     sources_height,
                     trends_height,
                     metrics_height,
@@ -124,6 +127,10 @@ impl ContentLayout {
 pub(crate) fn remaining_height(ui: &egui::Ui, content: ContentLayout) -> f32 {
     let consumed_height = (ui.cursor().top() - ui.min_rect().top()).max(0.0);
     (content.height - consumed_height - content.bottom_margin).max(0.0)
+}
+
+pub(crate) fn section_gap(ui: &egui::Ui) -> f32 {
+    config::SECTION_GAP + ui.spacing().item_spacing.y
 }
 
 pub(crate) fn panel_body_height(panel_height: f32) -> f32 {
@@ -187,4 +194,42 @@ pub(crate) fn sparkline_height(width: f32) -> f32 {
 
 fn clamped_extent(total: f32, ratio: f32, min: f32, max: f32) -> f32 {
     (total * ratio).clamp(min, max)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_section_gap() -> f32 {
+        config::SECTION_GAP + config::GLOBAL_ITEM_SPACING.y
+    }
+
+    fn assert_close(left: f32, right: f32) {
+        assert!(
+            (left - right).abs() < 0.001,
+            "expected {left} to match {right}"
+        );
+    }
+
+    #[test]
+    fn split_main_columns_end_at_the_same_height() {
+        let gap = test_section_gap();
+        let limits = PanelLimits::for_remaining_height(520.0, LayoutMode::Split, gap);
+
+        assert_close(
+            limits.sources_height + gap + limits.trends_height,
+            limits.metrics_height,
+        );
+    }
+
+    #[test]
+    fn stacked_main_panels_include_actual_gaps_in_the_height_budget() {
+        let gap = test_section_gap();
+        let limits = PanelLimits::for_remaining_height(760.0, LayoutMode::Stacked, gap);
+
+        assert_close(
+            limits.sources_height + gap + limits.trends_height + gap + limits.metrics_height,
+            config::MAIN_AREA_HEIGHT,
+        );
+    }
 }

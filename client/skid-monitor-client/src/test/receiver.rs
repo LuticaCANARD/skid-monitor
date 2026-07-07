@@ -70,7 +70,7 @@ fn receiver_loop_accepts_signals_on_multiple_listeners() {
 
     let addrs = match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
         ReceiverMessage::Listening(addrs) => addrs,
-        ReceiverMessage::Error(error) => panic!("receiver failed to bind: {error}"),
+        ReceiverMessage::Error { error, .. } => panic!("receiver failed to bind: {error}"),
         ReceiverMessage::Signal { .. } => panic!("signal arrived before listener status"),
         ReceiverMessage::ExtensionError(error) => panic!("unexpected extension error: {error}"),
     };
@@ -93,7 +93,7 @@ fn receiver_loop_accepts_signals_on_multiple_listeners() {
                 received += 1;
             }
             ReceiverMessage::Listening(addrs) => panic!("duplicate listener status: {addrs:?}"),
-            ReceiverMessage::Error(error) => panic!("receive failed: {error}"),
+            ReceiverMessage::Error { error, .. } => panic!("receive failed: {error}"),
             ReceiverMessage::ExtensionError(error) => panic!("unexpected extension error: {error}"),
             ReceiverMessage::Signal { .. } => panic!("unexpected signal kind"),
         }

@@ -121,7 +121,7 @@ pub(crate) fn alert_color(severity: AlertSeverity) -> Color32 {
 fn status_badge_label(status: &Status) -> (String, Color32) {
     match status {
         Status::Starting => ("starting".to_string(), config::STATUS_STARTING_COLOR),
-        Status::Listening(addr) => (format!("listening {addr}"), config::STATUS_LISTENING_COLOR),
+        Status::Listening(label) => (label.clone(), config::STATUS_LISTENING_COLOR),
         Status::Error(error) => (error.clone(), config::STATUS_ERROR_COLOR),
     }
 }
@@ -204,6 +204,7 @@ pub(crate) fn kind_color(kind: &str) -> Color32 {
         "extension" => config::EVENT_EXTENSION_COLOR,
         "alert" => config::EVENT_ALERT_COLOR,
         "resolved" => config::EVENT_RESOLVED_COLOR,
+        "agent" => config::EVENT_AGENT_COLOR,
         _ => config::EVENT_DEFAULT_COLOR,
     }
 }

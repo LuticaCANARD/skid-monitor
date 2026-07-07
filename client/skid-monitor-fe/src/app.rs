@@ -1,37 +1,66 @@
 use crate::alert::AlertStore;
 use crate::components::{
+    agents::{self, AddAgentDraft, AgentNotice, AgentOverviewAction},
     counters, event_log, header,
     layout::{
         ContentLayout, LayoutMode, PanelLimits, centered_content, graph_panel_width,
-        remaining_height,
+        remaining_height, section_gap,
     },
     metrics, nodes, trends,
 };
 use crate::config;
-use crate::model::{
-    AlertChange, AlertSeverity, AlertStatus, AlertTransition, EventRow, MetricSample, NodeSummary,
-    SignalCounters, Status,
-};
-use crate::signal::metric_samples;
-use crate::utils::push_capped;
-use eframe::egui;
-use skid_monitor_client::receiver_loop::{ReceiverMessage, spawn_receiver};
-use skid_protocol::protocol::Signal;
+use crate::edge::{EdgeSignalDecorations, edge_key};
+use crate::model::{EventRow, MetricSample, NodeSummary};
+use crate::state::DashboardState;
+use eframe::egui::{self, RichText};
+use skid_monitor_client::receiver_loop::{ReceiverMessage, spawn_receiver_with_notify};
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
 
 pub(crate) struct ControlRoomApp {
     rx: Receiver<ReceiverMessage>,
-    started_at: Instant,
-    status: Status,
-    listening_label: Option<String>,
-    counters: SignalCounters,
-    events: VecDeque<EventRow>,
+    state: DashboardState,
+    selected_node_key: Option<String>,
+    add_agent_open: bool,
+    add_agent_draft: AddAgentDraft,
+    add_agent_notice: Option<AddAgentNotice>,
+}
+
+struct AddAgentNotice {
+    message: String,
+    is_error: bool,
+}
+
+#[derive(Clone, Copy)]
+struct PanelData<'a> {
+    nodes: &'a BTreeMap<String, NodeSummary>,
+    edge_decorations: &'a EdgeSignalDecorations,
+    metrics: &'a VecDeque<MetricSample>,
+    metric_history: &'a BTreeMap<String, VecDeque<f64>>,
+    alerts: &'a AlertStore,
+}
+
+struct FilteredPanelData {
+    nodes: BTreeMap<String, NodeSummary>,
     metrics: VecDeque<MetricSample>,
     metric_history: BTreeMap<String, VecDeque<f64>>,
-    nodes: BTreeMap<String, NodeSummary>,
-    alerts: AlertStore,
+    events: VecDeque<EventRow>,
+}
+
+impl FilteredPanelData {
+    fn panel_data<'a>(
+        &'a self,
+        edge_decorations: &'a EdgeSignalDecorations,
+        alerts: &'a AlertStore,
+    ) -> PanelData<'a> {
+        PanelData {
+            nodes: &self.nodes,
+            edge_decorations,
+            metrics: &self.metrics,
+            metric_history: &self.metric_history,
+            alerts,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -46,7 +75,7 @@ trait PanelTemplate {
 
     fn render(
         self,
-        app: &ControlRoomApp,
+        data: PanelData<'_>,
         ui: &mut egui::Ui,
         compact: bool,
         panel_width: f32,
@@ -65,29 +94,36 @@ impl PanelTemplate for MainPanel {
 
     fn render(
         self,
-        app: &ControlRoomApp,
+        data: PanelData<'_>,
         ui: &mut egui::Ui,
         compact: bool,
         panel_width: f32,
         panel_height: f32,
     ) {
         match self {
-            Self::Nodes => nodes::show(ui, compact, &app.nodes, panel_width, panel_height),
+            Self::Nodes => nodes::show(
+                ui,
+                compact,
+                data.nodes,
+                data.edge_decorations,
+                panel_width,
+                panel_height,
+            ),
             Self::Trends => trends::show(
                 ui,
                 compact,
                 panel_width,
                 panel_height,
-                &app.metrics,
-                &app.metric_history,
+                data.metrics,
+                data.metric_history,
             ),
             Self::Metrics => metrics::show(
                 ui,
                 compact,
                 panel_width,
                 panel_height,
-                &app.metrics,
-                &app.alerts,
+                data.metrics,
+                data.alerts,
             ),
         }
     }
@@ -97,13 +133,6 @@ const STACKED_MAIN_PANELS: [MainPanel; 3] =
     [MainPanel::Nodes, MainPanel::Trends, MainPanel::Metrics];
 const GRAPH_MAIN_PANELS: [MainPanel; 2] = [MainPanel::Nodes, MainPanel::Trends];
 
-fn severity_label(severity: AlertSeverity) -> &'static str {
-    match severity {
-        AlertSeverity::Warning => "warning",
-        AlertSeverity::Critical => "critical",
-    }
-}
-
 impl ControlRoomApp {
     pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
@@ -112,210 +141,27 @@ impl ControlRoomApp {
             style.spacing.button_padding = config::GLOBAL_BUTTON_PADDING;
         });
 
+        let ctx = cc.egui_ctx.clone();
+
         Self {
-            rx: spawn_receiver(),
-            started_at: Instant::now(),
-            status: Status::Starting,
-            listening_label: None,
-            counters: SignalCounters::default(),
-            events: VecDeque::new(),
-            metrics: VecDeque::new(),
-            metric_history: BTreeMap::new(),
-            nodes: BTreeMap::new(),
-            alerts: AlertStore::default(),
+            rx: spawn_receiver_with_notify(move || ctx.request_repaint()),
+            state: DashboardState::new(),
+            selected_node_key: None,
+            add_agent_open: false,
+            add_agent_draft: AddAgentDraft::default(),
+            add_agent_notice: None,
         }
     }
 
-    fn drain_messages(&mut self) {
-        while let Ok(message) = self.rx.try_recv() {
-            match message {
-                ReceiverMessage::Listening(addrs) => {
-                    let label = listener_status_label(&addrs);
-                    let detail = listener_detail(&addrs);
-                    self.listening_label = Some(label.clone());
-                    self.status = Status::Listening(label);
-                    self.push_event("receiver", format!("listening on {detail}"));
-                    let change = self
-                        .alerts
-                        .observe_receiver_recovered("receiver is listening");
-                    self.push_alert_change(change);
-                }
-                ReceiverMessage::Signal { listener, signal } => {
-                    if let Some(label) = &self.listening_label {
-                        self.status = Status::Listening(label.clone());
-                    }
-                    let change = self
-                        .alerts
-                        .observe_receiver_recovered("receiver received a signal");
-                    self.push_alert_change(change);
-                    self.ingest_signal(&listener, signal);
-                }
-                ReceiverMessage::Error(error) => {
-                    self.push_event("error", error.clone());
-                    let change = self.alerts.observe_receiver_error(&error);
-                    if self.listening_label.is_none() {
-                        self.status = Status::Error(error);
-                    }
-                    self.push_alert_change(change);
-                }
-                ReceiverMessage::ExtensionError(error) => {
-                    self.push_event("extension", error.clone());
-                    let change = self.alerts.observe_extension_error(&error);
-                    self.push_alert_change(change);
-                }
-            }
-        }
-    }
-
-    fn ingest_signal(&mut self, listener: &str, signal: Signal) {
-        match &signal {
-            Signal::Metrics(request) => {
-                self.counters.metrics += 1;
-                let samples = metric_samples(request, listener);
-                let sample_count = samples.len();
-                self.counters.metric_points += sample_count;
-                for sample in samples {
-                    self.observe_metric_sample(&sample);
-                    if let Some(value) = sample.numeric {
-                        push_capped(
-                            self.metric_history
-                                .entry(sample.trend_key.clone())
-                                .or_default(),
-                            value,
-                            config::MAX_HISTORY_POINTS,
-                        );
-                    }
-                    let change = self.alerts.observe_metric(&sample);
-                    self.push_alert_change(change);
-                    push_capped(&mut self.metrics, sample, config::MAX_METRICS);
-                }
-                self.push_event(
-                    "metrics",
-                    format!(
-                        "received {} metric points from {} resources",
-                        sample_count,
-                        request.resource_metrics.len()
-                    ),
-                );
-            }
-            Signal::Traces(request) => {
-                let count = request
-                    .resource_spans
-                    .iter()
-                    .flat_map(|resource| &resource.scope_spans)
-                    .map(|scope| scope.spans.len())
-                    .sum::<usize>();
-                self.counters.traces += 1;
-                self.counters.spans += count;
-                self.observe_signal_items(listener, "traces", count);
-                self.push_event("traces", format!("received {count} spans"));
-            }
-            Signal::Logs(request) => {
-                let count = request
-                    .resource_logs
-                    .iter()
-                    .flat_map(|resource| &resource.scope_logs)
-                    .map(|scope| scope.log_records.len())
-                    .sum::<usize>();
-                self.counters.logs += 1;
-                self.counters.log_records += count;
-                self.observe_signal_items(listener, "logs", count);
-                self.push_event("logs", format!("received {count} log records"));
-            }
-        }
-    }
-
-    fn observe_metric_sample(&mut self, sample: &MetricSample) {
-        let key = node_row_key(&sample.endpoint, &sample.node);
-        let entry = self.nodes.entry(key).or_insert_with(|| NodeSummary {
-            node: sample.node.clone(),
-            endpoint: sample.endpoint.clone(),
-            source: sample.source.clone(),
-            service: sample.service.clone(),
-            metric_points: 0,
-            spans: 0,
-            log_records: 0,
-            last_metric: String::new(),
-            last_value: String::new(),
-            last_seen: Instant::now(),
-        });
-
-        entry.node = sample.node.clone();
-        entry.endpoint = sample.endpoint.clone();
-        entry.source = sample.source.clone();
-        entry.service = sample.service.clone();
-        entry.metric_points += 1;
-        entry.last_metric = sample.name.clone();
-        entry.last_value = sample.value.clone();
-        entry.last_seen = Instant::now();
-    }
-
-    fn observe_signal_items(&mut self, listener: &str, kind: &str, count: usize) {
-        let key = format!("endpoint:{listener}");
-        let entry = self.nodes.entry(key).or_insert_with(|| NodeSummary {
-            node: listener.to_string(),
-            endpoint: listener.to_string(),
-            source: kind.to_string(),
-            service: config::METRIC_EMPTY_FIELD.to_string(),
-            metric_points: 0,
-            spans: 0,
-            log_records: 0,
-            last_metric: String::new(),
-            last_value: String::new(),
-            last_seen: Instant::now(),
-        });
-
-        entry.source = kind.to_string();
-        match kind {
-            "traces" => entry.spans += count,
-            "logs" => entry.log_records += count,
-            _ => {}
-        }
-        entry.last_metric = kind.to_string();
-        entry.last_value = count.to_string();
-        entry.last_seen = Instant::now();
-    }
-
-    fn push_event(&mut self, kind: impl Into<String>, message: impl Into<String>) {
-        push_capped(
-            &mut self.events,
-            EventRow {
-                at: Instant::now(),
-                kind: kind.into(),
-                message: message.into(),
-            },
-            config::MAX_EVENTS,
-        );
-    }
-
-    fn push_alert_change(&mut self, change: Option<AlertChange>) {
-        let Some(change) = change else {
-            return;
-        };
-        let status = match change.snapshot.status {
-            AlertStatus::Firing => "firing",
-            AlertStatus::Resolved => "resolved",
-        };
-        let kind = match change.transition {
-            AlertTransition::Fired => "alert",
-            AlertTransition::Resolved => "resolved",
-        };
-        let severity = severity_label(change.snapshot.severity);
-
-        self.push_event(
-            kind,
-            format!(
-                "{status} {severity} {} [{}] from {}: {}",
-                change.snapshot.summary,
-                change.snapshot.rule_id,
-                change.snapshot.source,
-                change.snapshot.detail
-            ),
-        );
-    }
-
-    fn main_stack(&self, ui: &mut egui::Ui, compact: bool, panel_width: f32, limits: PanelLimits) {
-        self.panel_stack(ui, compact, panel_width, limits, &STACKED_MAIN_PANELS);
+    fn main_stack(
+        &self,
+        ui: &mut egui::Ui,
+        compact: bool,
+        panel_width: f32,
+        limits: PanelLimits,
+        data: PanelData<'_>,
+    ) {
+        self.panel_stack(ui, compact, panel_width, limits, data, &STACKED_MAIN_PANELS);
     }
 
     fn main_split(
@@ -324,6 +170,7 @@ impl ControlRoomApp {
         compact: bool,
         content_width: f32,
         limits: PanelLimits,
+        data: PanelData<'_>,
     ) {
         let spacing = ui.spacing().item_spacing.x;
         let graph_width = graph_panel_width(content_width);
@@ -333,11 +180,11 @@ impl ControlRoomApp {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(graph_width);
-                self.panel_stack(ui, compact, graph_width, limits, &GRAPH_MAIN_PANELS);
+                self.panel_stack(ui, compact, graph_width, limits, data, &GRAPH_MAIN_PANELS);
             });
             ui.vertical(|ui| {
                 ui.set_width(metrics_width);
-                self.panel(ui, compact, metrics_width, limits, MainPanel::Metrics);
+                self.panel(ui, compact, metrics_width, limits, data, MainPanel::Metrics);
             });
         });
     }
@@ -348,13 +195,14 @@ impl ControlRoomApp {
         compact: bool,
         panel_width: f32,
         limits: PanelLimits,
+        data: PanelData<'_>,
         panels: &[MainPanel],
     ) {
         for (index, panel) in panels.iter().copied().enumerate() {
             if index > 0 {
                 ui.add_space(config::SECTION_GAP);
             }
-            self.panel(ui, compact, panel_width, limits, panel);
+            self.panel(ui, compact, panel_width, limits, data, panel);
         }
     }
 
@@ -364,81 +212,223 @@ impl ControlRoomApp {
         compact: bool,
         panel_width: f32,
         limits: PanelLimits,
+        data: PanelData<'_>,
         panel: MainPanel,
     ) {
-        panel.render(self, ui, compact, panel_width, panel.height(limits));
+        panel.render(data, ui, compact, panel_width, panel.height(limits));
+    }
+
+    fn current_selected_key(&self) -> Option<String> {
+        self.selected_node_key
+            .clone()
+            .filter(|key| self.state.nodes().contains_key(key))
+    }
+
+    fn detail_toolbar(&mut self, ui: &mut egui::Ui, key: &str) {
+        let Some(node) = self.state.nodes().get(key) else {
+            return;
+        };
+
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Agents").clicked() {
+                self.selected_node_key = None;
+            }
+            ui.label(
+                RichText::new(&node.node)
+                    .strong()
+                    .color(config::TITLE_COLOR),
+            );
+            ui.label(
+                RichText::new(format!("{} / {}", node.endpoint, node.service))
+                    .monospace()
+                    .color(config::MUTED_TEXT_COLOR),
+            );
+        });
+    }
+
+    fn show_overview(
+        &mut self,
+        ui: &mut egui::Ui,
+        compact: bool,
+        panel_width: f32,
+        limits: PanelLimits,
+    ) {
+        let notice = self.add_agent_notice.as_ref().map(|notice| AgentNotice {
+            message: notice.message.as_str(),
+            is_error: notice.is_error,
+        });
+        let action = agents::show(
+            ui,
+            compact,
+            self.state.nodes(),
+            self.state.edge_decorations(),
+            &mut self.add_agent_draft,
+            self.add_agent_open,
+            notice,
+            panel_width,
+            limits.main_height,
+        );
+
+        if let Some(action) = action {
+            self.handle_agent_action(action);
+        }
+    }
+
+    fn show_node_detail(
+        &self,
+        ui: &mut egui::Ui,
+        compact: bool,
+        panel_width: f32,
+        layout: LayoutMode,
+        limits: PanelLimits,
+        key: &str,
+    ) {
+        let Some(filtered) = self.filtered_panel_data(key) else {
+            return;
+        };
+        let data = filtered.panel_data(self.state.edge_decorations(), self.state.alerts());
+
+        match layout {
+            LayoutMode::Split => {
+                self.main_split(ui, compact, panel_width, limits, data);
+            }
+            LayoutMode::Stacked | LayoutMode::Compact => {
+                self.main_stack(ui, compact, panel_width, limits, data);
+            }
+        }
+        ui.add_space(config::SECTION_GAP);
+        event_log::show(ui, panel_width, limits.event_log_height, &filtered.events);
+    }
+
+    fn handle_agent_action(&mut self, action: AgentOverviewAction) {
+        match action {
+            AgentOverviewAction::Select(key) => {
+                self.selected_node_key = Some(key);
+                self.add_agent_notice = None;
+            }
+            AgentOverviewAction::StartAdd => {
+                self.add_agent_open = true;
+                self.add_agent_notice = None;
+            }
+            AgentOverviewAction::CancelAdd => {
+                self.add_agent_open = false;
+                self.add_agent_notice = None;
+                self.add_agent_draft.clear();
+            }
+            AgentOverviewAction::SaveAdd {
+                endpoint,
+                node,
+                service,
+            } => match self.state.register_agent(&endpoint, &node, &service) {
+                Ok(_) => {
+                    self.add_agent_open = false;
+                    self.add_agent_draft.clear();
+                    self.add_agent_notice = Some(AddAgentNotice {
+                        message: "agent registered".to_string(),
+                        is_error: false,
+                    });
+                }
+                Err(error) => {
+                    self.add_agent_open = true;
+                    self.add_agent_notice = Some(AddAgentNotice {
+                        message: error,
+                        is_error: true,
+                    });
+                }
+            },
+        }
+    }
+
+    fn filtered_panel_data(&self, key: &str) -> Option<FilteredPanelData> {
+        let node = self.state.nodes().get(key)?;
+        let mut nodes = BTreeMap::new();
+        nodes.insert(key.to_string(), node.clone());
+
+        let metrics = self
+            .state
+            .metrics()
+            .iter()
+            .filter(|sample| edge_key(&sample.endpoint, &sample.node) == key)
+            .cloned()
+            .collect::<VecDeque<_>>();
+
+        let mut metric_history = BTreeMap::new();
+        for sample in &metrics {
+            if let Some(values) = self.state.metric_history().get(&sample.trend_key) {
+                metric_history.insert(sample.trend_key.clone(), values.clone());
+            }
+        }
+
+        let events = self
+            .state
+            .events()
+            .iter()
+            .filter(|event| event_matches_node(event, node))
+            .cloned()
+            .collect();
+
+        Some(FilteredPanelData {
+            nodes,
+            metrics,
+            metric_history,
+            events,
+        })
     }
 }
 
-fn listener_status_label(addrs: &[String]) -> String {
-    match addrs {
-        [] => "0 endpoints".to_string(),
-        [addr] => addr.clone(),
-        _ => format!("{} endpoints", addrs.len()),
-    }
-}
-
-fn listener_detail(addrs: &[String]) -> String {
-    match addrs {
-        [] => "0 endpoints".to_string(),
-        [addr] => addr.clone(),
-        _ => format!("{} endpoints: {}", addrs.len(), addrs.join(", ")),
-    }
-}
-
-fn node_row_key(endpoint: &str, node: &str) -> String {
-    format!("{endpoint}|{node}")
+fn event_matches_node(event: &EventRow, node: &NodeSummary) -> bool {
+    event.message.contains(&node.node) || event.message.contains(&node.endpoint)
 }
 
 impl eframe::App for ControlRoomApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.drain_messages();
-        ui.ctx()
-            .request_repaint_after(Duration::from_millis(config::REPAINT_INTERVAL_MS));
+        self.state.drain_messages(&self.rx);
 
         egui::Frame::default()
             .fill(config::PAGE_BACKGROUND)
             .inner_margin(egui::Margin::same(config::CONTENT_FRAME_MARGIN))
             .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("control-room-page-scroll")
-                    .auto_shrink([false, false])
-                    .show_viewport(ui, |ui, _viewport| {
-                        let content = ContentLayout::for_viewport(ui.clip_rect().size());
+                let content = ContentLayout::for_viewport(ui.clip_rect().size());
 
-                        centered_content(ui, content, |ui| {
-                            let panel_width = ui.available_width();
-                            let layout = LayoutMode::for_width(panel_width);
-                            let compact = layout.is_compact();
+                centered_content(ui, content, |ui| {
+                    let panel_width = ui.available_width();
+                    let layout = LayoutMode::for_width(panel_width);
+                    let compact = layout.is_compact();
 
-                            header::show(
-                                ui,
-                                compact,
-                                &self.status,
-                                self.alerts.summary(),
-                                self.started_at.elapsed(),
-                            );
-                            ui.add_space(config::HEADER_COUNTER_GAP);
-                            counters::show(ui, &self.counters);
-                            ui.add_space(config::SECTION_GAP);
+                    header::show(ui, compact, self.state.status(), self.state.alert_summary());
+                    ui.add_space(config::HEADER_COUNTER_GAP);
+                    counters::show(ui, self.state.counters());
+                    ui.add_space(config::SECTION_GAP);
 
-                            let limits = PanelLimits::for_remaining_height(
-                                remaining_height(ui, content),
-                                layout,
-                            );
-                            match layout {
-                                LayoutMode::Split => {
-                                    self.main_split(ui, compact, panel_width, limits);
-                                }
-                                LayoutMode::Stacked | LayoutMode::Compact => {
-                                    self.main_stack(ui, compact, panel_width, limits);
-                                }
-                            }
-                            ui.add_space(config::SECTION_GAP);
-                            event_log::show(ui, panel_width, limits.event_log_height, &self.events);
-                            ui.add_space(content.bottom_margin);
-                        });
-                    });
+                    let selected_key = self.current_selected_key();
+                    if self.selected_node_key != selected_key {
+                        self.selected_node_key = selected_key.clone();
+                    }
+                    if let Some(key) = selected_key.as_deref() {
+                        self.detail_toolbar(ui, key);
+                        ui.add_space(config::SECTION_GAP);
+                    }
+
+                    let section_gap = section_gap(ui);
+                    let limits = PanelLimits::for_remaining_height(
+                        remaining_height(ui, content),
+                        layout,
+                        section_gap,
+                    );
+                    if let Some(key) = self.current_selected_key() {
+                        self.show_node_detail(ui, compact, panel_width, layout, limits, &key);
+                    } else {
+                        self.show_overview(ui, compact, panel_width, limits);
+                        ui.add_space(config::SECTION_GAP);
+                        event_log::show(
+                            ui,
+                            panel_width,
+                            limits.event_log_height,
+                            self.state.events(),
+                        );
+                    }
+                    ui.add_space(content.bottom_margin);
+                });
             });
     }
 }

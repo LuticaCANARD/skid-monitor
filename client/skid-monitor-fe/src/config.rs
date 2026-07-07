@@ -6,7 +6,6 @@ pub(crate) const APP_TITLE: &str = "Skid Monitor";
 pub(crate) const APP_SUBTITLE: &str = "control room";
 pub(crate) const WINDOW_INITIAL_SIZE: [f32; 2] = [1180.0, 760.0];
 pub(crate) const WINDOW_MIN_SIZE: [f32; 2] = [280.0, 640.0];
-pub(crate) const REPAINT_INTERVAL_MS: u64 = 250;
 
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const USE_GPU_ENV: &str = "SKID_MONITOR_FE_USE_GPU";
@@ -36,6 +35,8 @@ pub(crate) const DISPLAY_ENV: &str = "DISPLAY";
 pub(crate) const MAX_EVENTS: usize = 256;
 pub(crate) const MAX_METRICS: usize = 512;
 pub(crate) const MAX_HISTORY_POINTS: usize = 180;
+pub(crate) const STATE_DB_PATH_ENV: &str = "SKID_MONITOR_FE_STATE_DB";
+pub(crate) const STATE_DB_DEFAULT_FILE: &str = "control-room.sqlite3";
 
 pub(crate) const CONTENT_MAX_WIDTH: f32 = 1320.0;
 pub(crate) const CONTENT_SIDE_MARGIN_MIN: f32 = 12.0;
@@ -69,6 +70,8 @@ pub(crate) const SOURCES_HEIGHT_MIN: f32 = 88.0;
 pub(crate) const SOURCES_HEIGHT_MAX: f32 = 180.0;
 pub(crate) const SOURCES_HEIGHT_RATIO: f32 = 0.15;
 pub(crate) const NODE_TABLE_MIN_WIDTH: f32 = 230.0;
+pub(crate) const NODE_EDGE_MARKER_WIDTH: f32 = 6.0;
+pub(crate) const NODE_EDGE_MARKER_HEIGHT: f32 = 18.0;
 
 pub(crate) const TRENDS_COMPACT_VISIBLE_COUNT: usize = 3;
 pub(crate) const TRENDS_WIDE_VISIBLE_COUNT: usize = 6;
@@ -162,6 +165,7 @@ pub(crate) const EVENT_ERROR_COLOR: Color32 = Color32::from_rgb(235, 92, 92);
 pub(crate) const EVENT_EXTENSION_COLOR: Color32 = Color32::from_rgb(210, 168, 74);
 pub(crate) const EVENT_ALERT_COLOR: Color32 = Color32::from_rgb(235, 92, 92);
 pub(crate) const EVENT_RESOLVED_COLOR: Color32 = Color32::from_rgb(76, 175, 112);
+pub(crate) const EVENT_AGENT_COLOR: Color32 = Color32::from_rgb(129, 201, 149);
 pub(crate) const EVENT_DEFAULT_COLOR: Color32 = Color32::from_gray(150);
 
 pub(crate) const METRIC_RESOURCE_SOURCE_KEY: &str = "skid_monitor.source";

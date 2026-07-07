@@ -11,19 +11,29 @@ pub(crate) struct AlertStore {
 }
 
 impl AlertStore {
-    pub(crate) fn observe_receiver_error(&mut self, error: &str) -> Option<AlertChange> {
+    pub(crate) fn observe_receiver_error(
+        &mut self,
+        listener: &str,
+        error: &str,
+    ) -> Option<AlertChange> {
         self.fire(
-            "receiver.error".to_string(),
+            format!("receiver.error:{listener}"),
             "receiver.error",
             AlertSeverity::Critical,
-            "frontend",
+            listener,
+            listener,
+            listener,
             "Receiver error",
             error.to_string(),
         )
     }
 
-    pub(crate) fn observe_receiver_recovered(&mut self, detail: &str) -> Option<AlertChange> {
-        self.resolve("receiver.error", detail.to_string())
+    pub(crate) fn observe_receiver_recovered(
+        &mut self,
+        listener: &str,
+        detail: &str,
+    ) -> Option<AlertChange> {
+        self.resolve(&format!("receiver.error:{listener}"), detail.to_string())
     }
 
     pub(crate) fn observe_extension_error(&mut self, error: &str) -> Option<AlertChange> {
@@ -31,6 +41,8 @@ impl AlertStore {
             "extension.error".to_string(),
             "extension.error",
             AlertSeverity::Warning,
+            "frontend",
+            "extension-host",
             "frontend",
             "Extension host error",
             error.to_string(),
@@ -44,6 +56,8 @@ impl AlertStore {
                 evaluation.key,
                 evaluation.rule_id,
                 evaluation.severity,
+                &evaluation.endpoint,
+                &evaluation.node,
                 &evaluation.source,
                 evaluation.summary,
                 evaluation.detail,
@@ -64,11 +78,21 @@ impl AlertStore {
         metric_alert_key(sample).and_then(|key| self.active.get(&key).map(|alert| alert.severity))
     }
 
+    pub(crate) fn highest_for_node(&self, endpoint: &str, node: &str) -> Option<AlertSeverity> {
+        self.active
+            .values()
+            .filter(|alert| alert.endpoint == endpoint && alert.node == node)
+            .map(|alert| alert.severity)
+            .max()
+    }
+
     fn fire(
         &mut self,
         key: String,
         rule_id: &str,
         severity: AlertSeverity,
+        endpoint: &str,
+        node: &str,
         source: &str,
         summary: &str,
         detail: String,
@@ -78,6 +102,8 @@ impl AlertStore {
             rule_id: rule_id.to_string(),
             severity,
             status: AlertStatus::Firing,
+            endpoint: endpoint.to_string(),
+            node: node.to_string(),
             source: source.to_string(),
             summary: summary.to_string(),
             detail,
@@ -115,6 +141,8 @@ struct MetricEvaluation {
     rule_id: &'static str,
     severity: AlertSeverity,
     source: String,
+    endpoint: String,
+    node: String,
     summary: &'static str,
     detail: String,
     firing: bool,
@@ -179,6 +207,8 @@ fn threshold_evaluation(
         rule_id,
         severity,
         source: sample.source.clone(),
+        endpoint: sample.endpoint.clone(),
+        node: sample.node.clone(),
         summary,
         detail,
         firing,
@@ -201,6 +231,8 @@ fn file_root_available_evaluation(sample: &MetricSample, value: f64) -> MetricEv
         rule_id: "file.root.unavailable",
         severity: AlertSeverity::Critical,
         source: sample.source.clone(),
+        endpoint: sample.endpoint.clone(),
+        node: sample.node.clone(),
         summary: "File root unavailable",
         detail,
         firing,
@@ -218,7 +250,7 @@ fn metric_alert_key(sample: &MetricSample) -> Option<String> {
 }
 
 fn rule_metric_key(rule_id: &str, sample: &MetricSample) -> String {
-    format!("{rule_id}:{}", sample.trend_key)
+    format!("{rule_id}:{}:{}", sample.endpoint, sample.trend_key)
 }
 
 #[cfg(test)]
@@ -267,18 +299,43 @@ mod tests {
         );
     }
 
+    #[test]
+    fn same_metric_from_different_listeners_alerts_independently() {
+        let mut alerts = AlertStore::default();
+        let first = sample_at("system.cpu.usage", 95.0, "95", "127.0.0.1:9000");
+        let second = sample_at("system.cpu.usage", 96.0, "96", "127.0.0.1:9001");
+
+        assert!(alerts.observe_metric(&first).is_some());
+        assert!(alerts.observe_metric(&second).is_some());
+        assert_eq!(alerts.summary().active_count, 2);
+
+        let recovered = sample_at("system.cpu.usage", 12.0, "12", "127.0.0.1:9000");
+        let change = alerts.observe_metric(&recovered).expect("first resolved");
+
+        assert_eq!(change.transition, AlertTransition::Resolved);
+        assert_eq!(alerts.summary().active_count, 1);
+        assert_eq!(
+            alerts.highest_for_node("127.0.0.1:9001", "agent@127.0.0.1:9001"),
+            Some(AlertSeverity::Warning)
+        );
+    }
+
     fn sample(name: &str, numeric: f64, value: &str) -> MetricSample {
+        sample_at(name, numeric, value, "fixture")
+    }
+
+    fn sample_at(name: &str, numeric: f64, value: &str, endpoint: &str) -> MetricSample {
         MetricSample {
             name: name.to_string(),
             value: value.to_string(),
             numeric: Some(numeric),
             source: "agent".to_string(),
             service: "agent".to_string(),
-            node: "agent@fixture".to_string(),
-            endpoint: "fixture".to_string(),
+            node: format!("agent@{endpoint}"),
+            endpoint: endpoint.to_string(),
             kind: "gauge".to_string(),
             attributes: "service=agent, scope=test".to_string(),
-            trend_key: format!("agent/{name}"),
+            trend_key: format!("{endpoint}/agent/agent@{endpoint}/{name}"),
         }
     }
 }
