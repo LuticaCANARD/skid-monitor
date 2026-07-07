@@ -20,5 +20,6 @@ pub(crate) struct DashboardState {
     pub(in crate::state) nodes: BTreeMap<String, NodeSummary>,
     pub(in crate::state) edge_decorations: EdgeSignalDecorations,
     pub(in crate::state) alerts: AlertStore,
+    pub(in crate::state) alerts_enabled: bool,
     pub(in crate::state) storage: Option<StateStorage>,
 }

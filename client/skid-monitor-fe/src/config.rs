@@ -38,10 +38,9 @@ pub(crate) const MAX_HISTORY_POINTS: usize = 180;
 pub(crate) const STATE_DB_PATH_ENV: &str = "SKID_MONITOR_FE_STATE_DB";
 pub(crate) const STATE_DB_DEFAULT_FILE: &str = "control-room.sqlite3";
 
-pub(crate) const CONTENT_MAX_WIDTH: f32 = 1320.0;
 pub(crate) const CONTENT_SIDE_MARGIN_MIN: f32 = 12.0;
-pub(crate) const CONTENT_SIDE_MARGIN_MAX: f32 = 72.0;
-pub(crate) const CONTENT_SIDE_MARGIN_RATIO: f32 = 0.035;
+pub(crate) const CONTENT_SIDE_MARGIN_MAX: f32 = 32.0;
+pub(crate) const CONTENT_SIDE_MARGIN_RATIO: f32 = 0.02;
 pub(crate) const CONTENT_BOTTOM_MARGIN_MIN: f32 = 18.0;
 pub(crate) const CONTENT_BOTTOM_MARGIN_MAX: f32 = 56.0;
 pub(crate) const CONTENT_BOTTOM_MARGIN_RATIO: f32 = 0.04;
@@ -124,9 +123,9 @@ pub(crate) const ALERT_BADGE_BORDER_WIDTH: f32 = 1.0;
 pub(crate) const ALERT_BADGE_RADIUS: u8 = 6;
 pub(crate) const ALERT_BADGE_MARGIN_X: i8 = 10;
 pub(crate) const ALERT_BADGE_MARGIN_Y: i8 = 5;
+pub(crate) const SETTINGS_BUTTON_WIDTH: f32 = 88.0;
 
 pub(crate) const PAGE_BACKGROUND: Color32 = Color32::from_rgb(15, 18, 24);
-pub(crate) const TITLE_COLOR: Color32 = Color32::from_rgb(231, 238, 247);
 pub(crate) const MUTED_TEXT_COLOR: Color32 = Color32::from_rgb(144, 155, 172);
 pub(crate) const PLACEHOLDER_TEXT_COLOR: Color32 = Color32::from_gray(130);
 pub(crate) const TABLE_HEADER_COLOR: Color32 = Color32::from_rgb(166, 188, 218);

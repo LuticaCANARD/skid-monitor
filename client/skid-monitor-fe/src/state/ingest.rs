@@ -26,9 +26,11 @@ impl DashboardState {
                             config::MAX_HISTORY_POINTS,
                         );
                     }
-                    let change = self.alerts.observe_metric(&sample);
-                    self.push_alert_change(change);
-                    self.update_edge_alert_severity(&sample);
+                    if self.alerts_enabled {
+                        let change = self.alerts.observe_metric(&sample);
+                        self.push_alert_change(change);
+                        self.update_edge_alert_severity(&sample);
+                    }
                     push_capped(&mut self.metrics, sample, config::MAX_METRICS);
                 }
                 self.push_event(

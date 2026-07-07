@@ -110,6 +110,18 @@ impl EdgeSignalDecorations {
         decoration.last_seen_unix_ms = unix_millis();
         Some(decoration.to_persisted())
     }
+
+    pub(crate) fn clear_severities(&mut self) -> Vec<PersistedEdgeState> {
+        let mut cleared = Vec::new();
+        for decoration in self.rows.values_mut() {
+            if decoration.severity.is_some() {
+                decoration.severity = None;
+                decoration.last_seen_unix_ms = unix_millis();
+                cleared.push(decoration.to_persisted());
+            }
+        }
+        cleared
+    }
 }
 
 impl EdgeSignalDecoration {

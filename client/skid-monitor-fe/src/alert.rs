@@ -69,9 +69,14 @@ impl AlertStore {
 
     pub(crate) fn summary(&self) -> AlertSummary {
         AlertSummary {
+            enabled: true,
             active_count: self.active.len(),
             highest_severity: self.active.values().map(|alert| alert.severity).max(),
         }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.active.clear();
     }
 
     pub(crate) fn active_for_metric(&self, sample: &MetricSample) -> Option<AlertSeverity> {

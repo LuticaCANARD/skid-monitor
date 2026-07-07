@@ -37,7 +37,35 @@ impl DashboardState {
         &self.alerts
     }
 
+    pub(crate) fn alerts_enabled(&self) -> bool {
+        self.alerts_enabled
+    }
+
+    pub(crate) fn set_alerts_enabled(&mut self, enabled: bool) {
+        if self.alerts_enabled == enabled {
+            return;
+        }
+
+        self.alerts_enabled = enabled;
+        if enabled {
+            self.push_event("settings", "alerts enabled");
+        } else {
+            self.alerts.clear();
+            let cleared_edges = self.edge_decorations.clear_severities();
+            for edge in cleared_edges {
+                self.persist_edge(edge);
+            }
+            self.push_event("settings", "alerts disabled");
+        }
+    }
+
     pub(crate) fn alert_summary(&self) -> AlertSummary {
-        self.alerts.summary()
+        let mut summary = self.alerts.summary();
+        summary.enabled = self.alerts_enabled;
+        if !self.alerts_enabled {
+            summary.active_count = 0;
+            summary.highest_severity = None;
+        }
+        summary
     }
 }

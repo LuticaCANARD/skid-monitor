@@ -127,6 +127,10 @@ fn status_badge_label(status: &Status) -> (String, Color32) {
 }
 
 fn alert_badge_label(summary: AlertSummary) -> (String, Color32) {
+    if !summary.enabled {
+        return ("alerts off".to_string(), config::MUTED_TEXT_COLOR);
+    }
+
     match summary.highest_severity {
         Some(AlertSeverity::Critical) => (
             format!("critical x{}", summary.active_count),
@@ -205,6 +209,7 @@ pub(crate) fn kind_color(kind: &str) -> Color32 {
         "alert" => config::EVENT_ALERT_COLOR,
         "resolved" => config::EVENT_RESOLVED_COLOR,
         "agent" => config::EVENT_AGENT_COLOR,
+        "settings" => config::EVENT_EXTENSION_COLOR,
         _ => config::EVENT_DEFAULT_COLOR,
     }
 }

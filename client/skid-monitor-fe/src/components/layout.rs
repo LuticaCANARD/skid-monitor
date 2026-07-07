@@ -106,7 +106,7 @@ impl ContentLayout {
             config::CONTENT_SIDE_MARGIN_MAX,
         );
         let width = (size.x - readable_margin * 2.0)
-            .clamp(1.0, config::CONTENT_MAX_WIDTH)
+            .max(1.0)
             .min(size.x.max(1.0));
         let side_margin = ((size.x - width) * 0.5).max(0.0);
 

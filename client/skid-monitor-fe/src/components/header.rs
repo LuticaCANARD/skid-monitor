@@ -5,15 +5,21 @@ use crate::config;
 use crate::model::{AlertSummary, Status};
 use eframe::egui::{self, RichText};
 
-pub(crate) fn show(ui: &mut egui::Ui, compact: bool, status: &Status, alert_summary: AlertSummary) {
+pub(crate) fn show(
+    ui: &mut egui::Ui,
+    compact: bool,
+    status: &Status,
+    alert_summary: AlertSummary,
+) -> bool {
     if compact {
-        show_compact(ui, status, alert_summary);
+        show_compact(ui, status, alert_summary)
     } else {
-        show_wide(ui, status, alert_summary);
+        show_wide(ui, status, alert_summary)
     }
 }
 
-fn show_wide(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) {
+fn show_wide(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) -> bool {
+    let mut settings_clicked = false;
     let available_width = ui.available_width().max(1.0);
     let header_height =
         (config::APP_TITLE_SIZE + config::APP_SUBTITLE_SIZE + ui.spacing().item_spacing.y)
@@ -25,7 +31,7 @@ fn show_wide(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) {
     let gap = ui.spacing().item_spacing.x;
     let status_width = status_badge_width(ui, status);
     let alert_width = alert_badge_width(ui, alert_summary);
-    let badge_width = status_width + gap + alert_width;
+    let badge_width = status_width + gap + alert_width + gap + config::SETTINGS_BUTTON_WIDTH;
     let status_rect = egui::Rect::from_min_size(
         egui::pos2((rect.right() - badge_width).max(rect.left()), rect.top()),
         egui::vec2(badge_width, header_height),
@@ -52,14 +58,33 @@ fn show_wide(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) {
     status_ui.spacing_mut().item_spacing.x = gap;
     status_badge(&mut status_ui, status);
     alert_badge(&mut status_ui, alert_summary);
+    if status_ui
+        .add_sized(
+            [
+                config::SETTINGS_BUTTON_WIDTH,
+                status_ui.spacing().interact_size.y,
+            ],
+            egui::Button::new("Settings"),
+        )
+        .clicked()
+    {
+        settings_clicked = true;
+    }
+
+    settings_clicked
 }
 
-fn show_compact(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) {
+fn show_compact(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) -> bool {
+    let mut settings_clicked = false;
     ui.horizontal_wrapped(|ui| {
         title(ui);
         status_badge(ui, status);
         alert_badge(ui, alert_summary);
+        if ui.button("Settings").clicked() {
+            settings_clicked = true;
+        }
     });
+    settings_clicked
 }
 
 fn title(ui: &mut egui::Ui) {
@@ -68,12 +93,12 @@ fn title(ui: &mut egui::Ui) {
             RichText::new(config::APP_TITLE)
                 .size(config::APP_TITLE_SIZE)
                 .strong()
-                .color(config::TITLE_COLOR),
+                .color(ui.visuals().strong_text_color()),
         );
         ui.label(
             RichText::new(config::APP_SUBTITLE)
                 .size(config::APP_SUBTITLE_SIZE)
-                .color(config::MUTED_TEXT_COLOR),
+                .color(ui.visuals().weak_text_color()),
         );
     });
 }

@@ -29,6 +29,7 @@ impl DashboardState {
             nodes,
             edge_decorations,
             alerts: AlertStore::default(),
+            alerts_enabled: true,
             storage: storage_init.storage,
         };
 
@@ -51,8 +52,10 @@ impl DashboardState {
                 }
                 ReceiverMessage::ExtensionError(error) => {
                     self.push_event("extension", error.clone());
-                    let change = self.alerts.observe_extension_error(&error);
-                    self.push_alert_change(change);
+                    if self.alerts_enabled {
+                        let change = self.alerts.observe_extension_error(&error);
+                        self.push_alert_change(change);
+                    }
                 }
             }
         }
@@ -110,11 +113,13 @@ impl DashboardState {
         self.listening_label = Some(label.clone());
         self.status = Status::Listening(label);
         self.push_event("receiver", "receiver ready");
-        for addr in addrs {
-            let change = self
-                .alerts
-                .observe_receiver_recovered(&addr, "receiver is listening");
-            self.push_alert_change(change);
+        if self.alerts_enabled {
+            for addr in addrs {
+                let change = self
+                    .alerts
+                    .observe_receiver_recovered(&addr, "receiver is listening");
+                self.push_alert_change(change);
+            }
         }
     }
 
@@ -122,21 +127,25 @@ impl DashboardState {
         if let Some(label) = &self.listening_label {
             self.status = Status::Listening(label.clone());
         }
-        let change = self
-            .alerts
-            .observe_receiver_recovered(&listener, "receiver received a signal");
-        self.push_alert_change(change);
+        if self.alerts_enabled {
+            let change = self
+                .alerts
+                .observe_receiver_recovered(&listener, "receiver received a signal");
+            self.push_alert_change(change);
+        }
         self.ingest_signal(&listener, signal);
     }
 
     fn observe_receiver_error(&mut self, listener: Option<&str>, error: String) {
         let source = listener.unwrap_or("receiver");
         self.push_event("error", error.clone());
-        let change = self.alerts.observe_receiver_error(source, &error);
+        if self.alerts_enabled {
+            let change = self.alerts.observe_receiver_error(source, &error);
+            self.push_alert_change(change);
+        }
         if self.listening_label.is_none() {
             self.status = Status::Error(error);
         }
-        self.push_alert_change(change);
     }
 }
 

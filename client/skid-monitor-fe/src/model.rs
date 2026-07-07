@@ -54,6 +54,7 @@ pub(crate) struct AlertChange {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct AlertSummary {
+    pub(crate) enabled: bool,
     pub(crate) active_count: usize,
     pub(crate) highest_severity: Option<AlertSeverity>,
 }

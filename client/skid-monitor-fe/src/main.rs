@@ -1,4 +1,5 @@
 mod alert;
+mod app;
 mod components;
 mod config;
 mod edge;
@@ -6,8 +7,9 @@ mod model;
 mod signal;
 mod state;
 mod storage;
+mod ui_settings;
 mod utils;
-mod app;
+mod view;
 
 use app::ControlRoomApp;
 use config::{APP_ID, WINDOW_INITIAL_SIZE, WINDOW_MIN_SIZE, WINDOW_TITLE};
