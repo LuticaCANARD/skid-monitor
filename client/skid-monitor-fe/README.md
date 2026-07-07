@@ -48,3 +48,19 @@ Start an agent in another terminal with the same address:
 ```sh
 SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 ```
+
+For multiple node agents, open one frontend listener per node-facing endpoint.
+`SKID_MONITOR_CLIENT_ADDRS` is only read by the frontend/client side; each agent
+still exports to one `SKID_MONITOR_CLIENT_ADDR` or one `skid_client.addr`.
+The `Nodes` table keeps the endpoints in one window and shows node, endpoint,
+source, service, counters, latest value, and last-seen age.
+
+```sh
+SKID_MONITOR_CLIENT_ADDRS=127.0.0.1:9000,127.0.0.1:9001 cargo run -p skid-monitor-fe
+
+# node-a
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
+
+# node-b
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9001 cargo run -p skid-monitor-agent
+```

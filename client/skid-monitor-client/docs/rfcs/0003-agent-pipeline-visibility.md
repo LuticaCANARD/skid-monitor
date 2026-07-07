@@ -12,17 +12,19 @@
 ## Abstract
 
 `skid-monitor-agent`가 Collector-like `receiver/processor/exporter/pipeline` 설정을 갖더라도,
-client는 agent 내부 설정을 직접 해석하지 않는다. client는 계속 `SKID_MONITOR_CLIENT_ADDR`에서
-length-prefixed JSON `Signal`을 수신하고, agent의 `skid_client` exporter가 같은 주소로 보낸
-metrics/traces/logs를 표시한다.
+client는 agent 내부 설정을 직접 해석하지 않는다. client는 `SKID_MONITOR_CLIENT_ADDR` 또는
+client 전용 `SKID_MONITOR_CLIENT_ADDRS` listen endpoint에서 length-prefixed JSON `Signal`을
+수신하고, agent의 `skid_client` exporter가 대응 주소로 보낸 metrics/traces/logs를 표시한다.
 
 즉 client의 관점에서 exporter 설정 체계는 "보낼지 말지, 어디로 보낼지"를 agent가 결정하는 upstream
 routing policy다. client는 Signal consumer이며, pipeline 설정의 source of truth는 agent config다.
 
 ## Decision Summary
 
-- client가 보려면 먼저 `SKID_MONITOR_CLIENT_ADDR`에서 TCP listener를 열어야 한다.
-- agent config의 `skid_client` exporter는 client listener와 같은 주소를 가리켜야 한다.
+- client가 보려면 먼저 `SKID_MONITOR_CLIENT_ADDR` 또는 `SKID_MONITOR_CLIENT_ADDRS`에서 TCP listener를 열어야 한다.
+- agent config의 `skid_client` exporter는 client listener 중 하나와 같은 주소를 가리켜야 한다.
+- 다중 노드 agent는 FE/client가 여러 listener를 열고, 각 agent/exporter가 자기 노드에 대응하는 단일 주소로 보낸다.
+- native FE는 한 창의 `Nodes` table에서 명시 node attribute 또는 listener endpoint fallback 기준으로 노드 행을 분리한다.
 - metrics/traces/logs pipeline 각각에 `skid_client` exporter 이름이 포함되어야 client에 도착한다.
 - client는 `Signal::{Metrics, Traces, Logs}` payload를 그대로 수신한다.
 - OTLP receiver, logging exporter, upstream OTLP exporter 존재 여부는 client protocol을 바꾸지 않는다.
@@ -70,6 +72,16 @@ Then start the agent with a pipeline config that exports to the same address.
 SKID_MONITOR_AGENT_CONFIG=skid-monitor-agent/examples/agent-config.json cargo run -p skid-monitor-agent
 ```
 
+For multiple node agents, start the viewer with a comma-separated listener list
+and point each node agent at one endpoint.
+
+```sh
+SKID_MONITOR_CLIENT_ADDRS=127.0.0.1:9000,127.0.0.1:9001 cargo run -p skid-monitor-fe
+
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9001 cargo run -p skid-monitor-agent
+```
+
 The minimal client-facing exporter shape is:
 
 ```json
@@ -115,12 +127,12 @@ Application-side environment example:
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
 ```
 
-The client still listens only on `SKID_MONITOR_CLIENT_ADDR`. It does not expose an OTLP receiver and does not accept
-OTLP directly.
+The client still listens only on the configured Skid client signal endpoint(s). It does not expose an OTLP receiver
+and does not accept OTLP directly.
 
 ## Client Responsibilities
 
-- Bind the configured client address before the agent starts exporting.
+- Bind the configured client address or address list before the agent starts exporting.
 - Decode the length-prefixed JSON `Signal` frame.
 - Render metrics, traces, and logs without assuming a single receiver source.
 - Surface receive errors clearly, especially bind failures and malformed frames.
@@ -139,6 +151,8 @@ OTLP directly.
 - If client and agent use different addresses, no signals appear in the dashboard.
 - If a pipeline omits `skid`, that signal type is not shown by design.
 - If another process owns `SKID_MONITOR_CLIENT_ADDR`, the client fails to bind and should report the bind error.
+- If one address in `SKID_MONITOR_CLIENT_ADDRS` fails to bind, the client reports that listener error and continues
+  with the listeners that did bind.
 - If OTLP receiver is disabled, OpenTelemetry apps sending to `127.0.0.1:4317` will not appear in the client.
 
 ## Non-Goals

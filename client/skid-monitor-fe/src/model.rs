@@ -62,11 +62,27 @@ pub(crate) struct EventRow {
     pub(crate) message: String,
 }
 
+pub(crate) struct NodeSummary {
+    pub(crate) node: String,
+    pub(crate) endpoint: String,
+    pub(crate) source: String,
+    pub(crate) service: String,
+    pub(crate) metric_points: usize,
+    pub(crate) spans: usize,
+    pub(crate) log_records: usize,
+    pub(crate) last_metric: String,
+    pub(crate) last_value: String,
+    pub(crate) last_seen: Instant,
+}
+
 pub(crate) struct MetricSample {
     pub(crate) name: String,
     pub(crate) value: String,
     pub(crate) numeric: Option<f64>,
     pub(crate) source: String,
+    pub(crate) service: String,
+    pub(crate) node: String,
+    pub(crate) endpoint: String,
     pub(crate) kind: String,
     pub(crate) attributes: String,
     pub(crate) trend_key: String,

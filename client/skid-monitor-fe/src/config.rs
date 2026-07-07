@@ -68,7 +68,7 @@ pub(crate) const SPLIT_BREAKPOINT: f32 = 980.0;
 pub(crate) const SOURCES_HEIGHT_MIN: f32 = 88.0;
 pub(crate) const SOURCES_HEIGHT_MAX: f32 = 180.0;
 pub(crate) const SOURCES_HEIGHT_RATIO: f32 = 0.15;
-pub(crate) const SOURCES_MIN_WIDTH: f32 = 230.0;
+pub(crate) const NODE_TABLE_MIN_WIDTH: f32 = 230.0;
 
 pub(crate) const TRENDS_COMPACT_VISIBLE_COUNT: usize = 3;
 pub(crate) const TRENDS_WIDE_VISIBLE_COUNT: usize = 6;
@@ -93,7 +93,7 @@ pub(crate) const METRICS_TABLE_HEIGHT_MIN: f32 = 220.0;
 pub(crate) const METRICS_TABLE_HEIGHT_MAX: f32 = 390.0;
 pub(crate) const METRICS_TABLE_HEIGHT_RATIO: f32 = 0.38;
 pub(crate) const METRICS_TABLE_MIN_WIDTH: f32 = 460.0;
-pub(crate) const METRICS_WIDE_SCROLL_MIN_WIDTH: f32 = 920.0;
+pub(crate) const METRICS_WIDE_SCROLL_MIN_WIDTH: f32 = 1020.0;
 pub(crate) const METRICS_WIDE_MIN_COL_WIDTH: f32 = 80.0;
 pub(crate) const METRICS_COMPACT_VALUE_WIDTH_RATIO: f32 = 0.28;
 pub(crate) const METRICS_COMPACT_VALUE_WIDTH_MIN: f32 = 72.0;

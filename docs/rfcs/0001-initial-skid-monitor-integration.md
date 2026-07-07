@@ -320,6 +320,7 @@ source를 함께 낼 수 있다.
 | 환경변수 | 설정 파일 필드 | 의미 | 적용 주체 |
 | --- | --- | --- | --- |
 | `SKID_MONITOR_CLIENT_ADDR` | `client.connect` | agent가 client로 `Signal`을 보낼 대상 주소, client는 같은 값을 listen 주소로 사용 | `skid-monitor-agent`, `skid-monitor-client` |
+| `SKID_MONITOR_CLIENT_ADDRS` | client listen list | 다중 노드 agent를 노드별 endpoint로 받을 때 client가 여는 comma-separated listen 주소 목록 | `skid-monitor-client`, `skid-monitor-fe` |
 | `SKID_MONITOR_DEVICE_LISTEN_ADDR` | `device_ingress.listen` | agent device ingress 수신 주소, 기본 `127.0.0.1:9101`, `off`로 비활성화 | `skid-monitor-agent` |
 | `SKID_MONITOR_DEVICE_ADDR` | sender `device_ingress.connect` | capability node가 접속할 agent device socket 주소 | capability nodes |
 | `SKID_MONITOR_DEVICE_FRAME` | `device_ingress.protocol` | device frame 모드: `legacy`, `auto`, `v1` | agent 수신부 + node 송신부 |

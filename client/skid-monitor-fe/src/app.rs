@@ -5,11 +5,11 @@ use crate::components::{
         ContentLayout, LayoutMode, PanelLimits, centered_content, graph_panel_width,
         remaining_height,
     },
-    metrics, sources, trends,
+    metrics, nodes, trends,
 };
 use crate::config;
 use crate::model::{
-    AlertChange, AlertSeverity, AlertStatus, AlertTransition, EventRow, MetricSample,
+    AlertChange, AlertSeverity, AlertStatus, AlertTransition, EventRow, MetricSample, NodeSummary,
     SignalCounters, Status,
 };
 use crate::signal::metric_samples;
@@ -25,17 +25,18 @@ pub(crate) struct ControlRoomApp {
     rx: Receiver<ReceiverMessage>,
     started_at: Instant,
     status: Status,
+    listening_label: Option<String>,
     counters: SignalCounters,
     events: VecDeque<EventRow>,
     metrics: VecDeque<MetricSample>,
     metric_history: BTreeMap<String, VecDeque<f64>>,
-    source_counts: BTreeMap<String, usize>,
+    nodes: BTreeMap<String, NodeSummary>,
     alerts: AlertStore,
 }
 
 #[derive(Clone, Copy)]
 enum MainPanel {
-    Sources,
+    Nodes,
     Trends,
     Metrics,
 }
@@ -56,7 +57,7 @@ trait PanelTemplate {
 impl PanelTemplate for MainPanel {
     fn height(self, limits: PanelLimits) -> f32 {
         match self {
-            Self::Sources => limits.sources_height,
+            Self::Nodes => limits.sources_height,
             Self::Trends => limits.trends_height,
             Self::Metrics => limits.metrics_height,
         }
@@ -71,7 +72,7 @@ impl PanelTemplate for MainPanel {
         panel_height: f32,
     ) {
         match self {
-            Self::Sources => sources::show(ui, &app.source_counts, panel_width, panel_height),
+            Self::Nodes => nodes::show(ui, compact, &app.nodes, panel_width, panel_height),
             Self::Trends => trends::show(
                 ui,
                 compact,
@@ -93,8 +94,8 @@ impl PanelTemplate for MainPanel {
 }
 
 const STACKED_MAIN_PANELS: [MainPanel; 3] =
-    [MainPanel::Sources, MainPanel::Trends, MainPanel::Metrics];
-const GRAPH_MAIN_PANELS: [MainPanel; 2] = [MainPanel::Sources, MainPanel::Trends];
+    [MainPanel::Nodes, MainPanel::Trends, MainPanel::Metrics];
+const GRAPH_MAIN_PANELS: [MainPanel; 2] = [MainPanel::Nodes, MainPanel::Trends];
 
 fn severity_label(severity: AlertSeverity) -> &'static str {
     match severity {
@@ -115,11 +116,12 @@ impl ControlRoomApp {
             rx: spawn_receiver(),
             started_at: Instant::now(),
             status: Status::Starting,
+            listening_label: None,
             counters: SignalCounters::default(),
             events: VecDeque::new(),
             metrics: VecDeque::new(),
             metric_history: BTreeMap::new(),
-            source_counts: BTreeMap::new(),
+            nodes: BTreeMap::new(),
             alerts: AlertStore::default(),
         }
     }
@@ -127,28 +129,33 @@ impl ControlRoomApp {
     fn drain_messages(&mut self) {
         while let Ok(message) = self.rx.try_recv() {
             match message {
-                ReceiverMessage::Listening(addr) => {
-                    self.status = Status::Listening(addr.clone());
-                    self.push_event("receiver", format!("listening on {addr}"));
+                ReceiverMessage::Listening(addrs) => {
+                    let label = listener_status_label(&addrs);
+                    let detail = listener_detail(&addrs);
+                    self.listening_label = Some(label.clone());
+                    self.status = Status::Listening(label);
+                    self.push_event("receiver", format!("listening on {detail}"));
                     let change = self
                         .alerts
                         .observe_receiver_recovered("receiver is listening");
                     self.push_alert_change(change);
                 }
-                ReceiverMessage::Signal(signal) => {
+                ReceiverMessage::Signal { listener, signal } => {
+                    if let Some(label) = &self.listening_label {
+                        self.status = Status::Listening(label.clone());
+                    }
                     let change = self
                         .alerts
                         .observe_receiver_recovered("receiver received a signal");
                     self.push_alert_change(change);
-                    self.ingest_signal(signal);
+                    self.ingest_signal(&listener, signal);
                 }
                 ReceiverMessage::Error(error) => {
-                    self.status = Status::Error(error.clone());
-                    self.push_event("error", error);
-                    let change = match &self.status {
-                        Status::Error(error) => self.alerts.observe_receiver_error(error),
-                        Status::Starting | Status::Listening(_) => None,
-                    };
+                    self.push_event("error", error.clone());
+                    let change = self.alerts.observe_receiver_error(&error);
+                    if self.listening_label.is_none() {
+                        self.status = Status::Error(error);
+                    }
                     self.push_alert_change(change);
                 }
                 ReceiverMessage::ExtensionError(error) => {
@@ -160,15 +167,15 @@ impl ControlRoomApp {
         }
     }
 
-    fn ingest_signal(&mut self, signal: Signal) {
+    fn ingest_signal(&mut self, listener: &str, signal: Signal) {
         match &signal {
             Signal::Metrics(request) => {
                 self.counters.metrics += 1;
-                let samples = metric_samples(request);
+                let samples = metric_samples(request, listener);
                 let sample_count = samples.len();
                 self.counters.metric_points += sample_count;
                 for sample in samples {
-                    *self.source_counts.entry(sample.source.clone()).or_default() += 1;
+                    self.observe_metric_sample(&sample);
                     if let Some(value) = sample.numeric {
                         push_capped(
                             self.metric_history
@@ -200,6 +207,7 @@ impl ControlRoomApp {
                     .sum::<usize>();
                 self.counters.traces += 1;
                 self.counters.spans += count;
+                self.observe_signal_items(listener, "traces", count);
                 self.push_event("traces", format!("received {count} spans"));
             }
             Signal::Logs(request) => {
@@ -211,9 +219,61 @@ impl ControlRoomApp {
                     .sum::<usize>();
                 self.counters.logs += 1;
                 self.counters.log_records += count;
+                self.observe_signal_items(listener, "logs", count);
                 self.push_event("logs", format!("received {count} log records"));
             }
         }
+    }
+
+    fn observe_metric_sample(&mut self, sample: &MetricSample) {
+        let key = node_row_key(&sample.endpoint, &sample.node);
+        let entry = self.nodes.entry(key).or_insert_with(|| NodeSummary {
+            node: sample.node.clone(),
+            endpoint: sample.endpoint.clone(),
+            source: sample.source.clone(),
+            service: sample.service.clone(),
+            metric_points: 0,
+            spans: 0,
+            log_records: 0,
+            last_metric: String::new(),
+            last_value: String::new(),
+            last_seen: Instant::now(),
+        });
+
+        entry.node = sample.node.clone();
+        entry.endpoint = sample.endpoint.clone();
+        entry.source = sample.source.clone();
+        entry.service = sample.service.clone();
+        entry.metric_points += 1;
+        entry.last_metric = sample.name.clone();
+        entry.last_value = sample.value.clone();
+        entry.last_seen = Instant::now();
+    }
+
+    fn observe_signal_items(&mut self, listener: &str, kind: &str, count: usize) {
+        let key = format!("endpoint:{listener}");
+        let entry = self.nodes.entry(key).or_insert_with(|| NodeSummary {
+            node: listener.to_string(),
+            endpoint: listener.to_string(),
+            source: kind.to_string(),
+            service: config::METRIC_EMPTY_FIELD.to_string(),
+            metric_points: 0,
+            spans: 0,
+            log_records: 0,
+            last_metric: String::new(),
+            last_value: String::new(),
+            last_seen: Instant::now(),
+        });
+
+        entry.source = kind.to_string();
+        match kind {
+            "traces" => entry.spans += count,
+            "logs" => entry.log_records += count,
+            _ => {}
+        }
+        entry.last_metric = kind.to_string();
+        entry.last_value = count.to_string();
+        entry.last_seen = Instant::now();
     }
 
     fn push_event(&mut self, kind: impl Into<String>, message: impl Into<String>) {
@@ -308,6 +368,26 @@ impl ControlRoomApp {
     ) {
         panel.render(self, ui, compact, panel_width, panel.height(limits));
     }
+}
+
+fn listener_status_label(addrs: &[String]) -> String {
+    match addrs {
+        [] => "0 endpoints".to_string(),
+        [addr] => addr.clone(),
+        _ => format!("{} endpoints", addrs.len()),
+    }
+}
+
+fn listener_detail(addrs: &[String]) -> String {
+    match addrs {
+        [] => "0 endpoints".to_string(),
+        [addr] => addr.clone(),
+        _ => format!("{} endpoints: {}", addrs.len(), addrs.join(", ")),
+    }
+}
+
+fn node_row_key(endpoint: &str, node: &str) -> String {
+    format!("{endpoint}|{node}")
 }
 
 impl eframe::App for ControlRoomApp {

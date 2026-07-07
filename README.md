@@ -46,6 +46,21 @@ SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-fe
 SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 ```
 
+여러 노드의 agent를 노드별 local port-forward나 overlay endpoint로 받을 때는 FE가 여러 listen
+주소를 동시에 연다. `SKID_MONITOR_CLIENT_ADDRS`는 FE/client 전용 comma-separated 목록이고,
+각 agent는 자기 노드에 대응하는 단일 `SKID_MONITOR_CLIENT_ADDR`로 보낸다.
+FE는 한 창 안의 `Nodes` 표에서 node/endpoint/source/service와 최신 signal 값을 행 단위로 보여준다.
+
+```sh
+SKID_MONITOR_CLIENT_ADDRS=127.0.0.1:9000,127.0.0.1:9001 cargo run -p skid-monitor-fe
+
+# node-a agent/exporter
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
+
+# node-b agent/exporter
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9001 cargo run -p skid-monitor-agent
+```
+
 ## Host Metrics
 
 `skid-monitor-agent`는 OpenTelemetry 자체 계측뿐 아니라 OS별 호스트 메트릭도 함께 수집한다.
