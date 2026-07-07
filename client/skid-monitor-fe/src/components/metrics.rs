@@ -5,14 +5,13 @@ use crate::config;
 use crate::model::{AlertSeverity, MetricSample};
 use crate::utils::shorten;
 use eframe::egui::{self, RichText, Stroke};
-use std::collections::VecDeque;
 
 pub(crate) fn show(
     ui: &mut egui::Ui,
     compact: bool,
     panel_width: f32,
     max_height: f32,
-    metrics: &VecDeque<MetricSample>,
+    metrics: &[&MetricSample],
     alerts: &AlertStore,
 ) {
     panel_frame(ui, panel_width, max_height, |ui, inner_size| {
@@ -50,7 +49,7 @@ fn compact_metrics_table(
     ui: &mut egui::Ui,
     panel_width: f32,
     max_height: f32,
-    metrics: &VecDeque<MetricSample>,
+    metrics: &[&MetricSample],
     alerts: &AlertStore,
 ) {
     let row_width = ui.available_width().min(panel_width).max(1.0);
@@ -95,7 +94,7 @@ fn compact_metrics_table(
         .max_height(row_area_height)
         .show(ui, |ui| {
             ui.set_width(row_width);
-            for (index, sample) in metrics.iter().rev().enumerate() {
+            for (index, sample) in metrics.iter().rev().copied().enumerate() {
                 let severity = alerts.active_for_metric(sample);
                 let fill = row_fill(index, severity);
                 let stroke = severity
@@ -127,7 +126,7 @@ fn wide_metrics_table(
     ui: &mut egui::Ui,
     panel_width: f32,
     max_height: f32,
-    metrics: &VecDeque<MetricSample>,
+    metrics: &[&MetricSample],
     alerts: &AlertStore,
 ) {
     let table_width = panel_width.max(config::METRICS_WIDE_SCROLL_MIN_WIDTH);
@@ -151,7 +150,7 @@ fn wide_metrics_table(
                     table_header(ui, "attrs");
                     ui.end_row();
 
-                    for sample in metrics.iter().rev() {
+                    for sample in metrics.iter().rev().copied() {
                         let severity = alerts.active_for_metric(sample);
                         let metric = match severity {
                             Some(severity) => RichText::new(&sample.name)

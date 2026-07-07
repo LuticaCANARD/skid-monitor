@@ -9,20 +9,19 @@ use crate::model::{MetricSample, NodeSummary};
 use eframe::egui;
 use std::collections::{BTreeMap, VecDeque};
 
-#[derive(Clone, Copy)]
 pub(crate) struct MainPanelData<'a> {
-    nodes: &'a BTreeMap<String, NodeSummary>,
+    nodes: Vec<&'a NodeSummary>,
     edge_decorations: &'a EdgeSignalDecorations,
-    metrics: &'a VecDeque<MetricSample>,
+    metrics: Vec<&'a MetricSample>,
     metric_history: &'a BTreeMap<String, VecDeque<f64>>,
     alerts: &'a AlertStore,
 }
 
 impl<'a> MainPanelData<'a> {
     pub(crate) fn new(
-        nodes: &'a BTreeMap<String, NodeSummary>,
+        nodes: Vec<&'a NodeSummary>,
         edge_decorations: &'a EdgeSignalDecorations,
-        metrics: &'a VecDeque<MetricSample>,
+        metrics: Vec<&'a MetricSample>,
         metric_history: &'a BTreeMap<String, VecDeque<f64>>,
         alerts: &'a AlertStore,
     ) -> Self {
@@ -48,7 +47,7 @@ trait PanelTemplate {
 
     fn render(
         self,
-        data: MainPanelData<'_>,
+        data: &MainPanelData<'_>,
         ui: &mut egui::Ui,
         compact: bool,
         panel_width: f32,
@@ -67,7 +66,7 @@ impl PanelTemplate for MainPanel {
 
     fn render(
         self,
-        data: MainPanelData<'_>,
+        data: &MainPanelData<'_>,
         ui: &mut egui::Ui,
         compact: bool,
         panel_width: f32,
@@ -77,7 +76,7 @@ impl PanelTemplate for MainPanel {
             Self::Nodes => nodes::show(
                 ui,
                 compact,
-                data.nodes,
+                &data.nodes,
                 data.edge_decorations,
                 panel_width,
                 panel_height,
@@ -87,7 +86,7 @@ impl PanelTemplate for MainPanel {
                 compact,
                 panel_width,
                 panel_height,
-                data.metrics,
+                &data.metrics,
                 data.metric_history,
             ),
             Self::Metrics => metrics::show(
@@ -95,7 +94,7 @@ impl PanelTemplate for MainPanel {
                 compact,
                 panel_width,
                 panel_height,
-                data.metrics,
+                &data.metrics,
                 data.alerts,
             ),
         }
@@ -114,9 +113,9 @@ pub(crate) fn show(
     data: MainPanelData<'_>,
 ) {
     match layout {
-        LayoutMode::Split => split(ui, compact, panel_width, limits, data),
+        LayoutMode::Split => split(ui, compact, panel_width, limits, &data),
         LayoutMode::Stacked | LayoutMode::Compact => {
-            stack(ui, compact, panel_width, limits, data, &STACKED_PANELS);
+            stack(ui, compact, panel_width, limits, &data, &STACKED_PANELS);
         }
     }
 }
@@ -126,7 +125,7 @@ fn split(
     compact: bool,
     content_width: f32,
     limits: PanelLimits,
-    data: MainPanelData<'_>,
+    data: &MainPanelData<'_>,
 ) {
     let spacing = ui.spacing().item_spacing.x;
     let graph_width = graph_panel_width(content_width);
@@ -150,7 +149,7 @@ fn stack(
     compact: bool,
     panel_width: f32,
     limits: PanelLimits,
-    data: MainPanelData<'_>,
+    data: &MainPanelData<'_>,
     panels: &[MainPanel],
 ) {
     for (index, panel_kind) in panels.iter().copied().enumerate() {
@@ -166,7 +165,7 @@ fn panel(
     compact: bool,
     panel_width: f32,
     limits: PanelLimits,
-    data: MainPanelData<'_>,
+    data: &MainPanelData<'_>,
     panel_kind: MainPanel,
 ) {
     panel_kind.render(data, ui, compact, panel_width, panel_kind.height(limits));

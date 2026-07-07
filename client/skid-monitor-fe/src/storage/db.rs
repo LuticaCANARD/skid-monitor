@@ -1,154 +1,11 @@
-use crate::config;
+use super::AlertRecord;
 use crate::edge::{PersistedEdgeState, severity_from_name, severity_name};
-use crate::model::{AlertChange, AlertSeverity, AlertStatus, AlertTransition};
+use crate::model::{AlertStatus, AlertTransition};
 use sqlx::Row;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
-use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::path::Path;
 
-const STORAGE_INIT_TIMEOUT: Duration = Duration::from_secs(2);
-
-pub(crate) struct StorageInit {
-    pub(crate) storage: Option<StateStorage>,
-    pub(crate) restored_edges: Vec<PersistedEdgeState>,
-    pub(crate) message: Option<String>,
-}
-
-#[derive(Clone)]
-pub(crate) struct StateStorage {
-    tx: Sender<StorageCommand>,
-}
-
-impl StateStorage {
-    pub(crate) fn start() -> StorageInit {
-        let path = state_db_path();
-        let label = path.display().to_string();
-        let (tx, rx) = mpsc::channel();
-        let (init_tx, init_rx) = mpsc::channel();
-        thread::spawn(move || run_storage(path, rx, init_tx));
-
-        match init_rx.recv_timeout(STORAGE_INIT_TIMEOUT) {
-            Ok(Ok(restored_edges)) => StorageInit {
-                storage: Some(Self { tx }),
-                restored_edges,
-                message: Some(format!("state db ready at {label}")),
-            },
-            Ok(Err(error)) => StorageInit {
-                storage: None,
-                restored_edges: Vec::new(),
-                message: Some(format!("state db disabled: {error}")),
-            },
-            Err(error) => StorageInit {
-                storage: None,
-                restored_edges: Vec::new(),
-                message: Some(format!("state db startup timed out: {error}")),
-            },
-        }
-    }
-
-    pub(crate) fn persist_edge(&self, edge: &PersistedEdgeState) {
-        let _ = self.tx.send(StorageCommand::UpsertEdge(edge.clone()));
-    }
-
-    pub(crate) fn persist_alert(&self, change: &AlertChange) {
-        let _ = self
-            .tx
-            .send(StorageCommand::RecordAlert(AlertRecord::from(change)));
-    }
-}
-
-enum StorageCommand {
-    UpsertEdge(PersistedEdgeState),
-    RecordAlert(AlertRecord),
-}
-
-struct AlertRecord {
-    at_unix_ms: i64,
-    transition: AlertTransition,
-    key: String,
-    rule_id: String,
-    severity: AlertSeverity,
-    status: AlertStatus,
-    endpoint: String,
-    node: String,
-    source: String,
-    summary: String,
-    detail: String,
-}
-
-impl From<&AlertChange> for AlertRecord {
-    fn from(change: &AlertChange) -> Self {
-        Self {
-            at_unix_ms: unix_millis(),
-            transition: change.transition,
-            key: change.snapshot.key.clone(),
-            rule_id: change.snapshot.rule_id.clone(),
-            severity: change.snapshot.severity,
-            status: change.snapshot.status,
-            endpoint: change.snapshot.endpoint.clone(),
-            node: change.snapshot.node.clone(),
-            source: change.snapshot.source.clone(),
-            summary: change.snapshot.summary.clone(),
-            detail: change.snapshot.detail.clone(),
-        }
-    }
-}
-
-fn run_storage(
-    path: PathBuf,
-    rx: Receiver<StorageCommand>,
-    init_tx: Sender<Result<Vec<PersistedEdgeState>, String>>,
-) {
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            let _ = init_tx.send(Err(format!("failed to start sqlite runtime: {error}")));
-            return;
-        }
-    };
-
-    let pool = match runtime.block_on(open_pool(&path)) {
-        Ok(pool) => pool,
-        Err(error) => {
-            let _ = init_tx.send(Err(error));
-            return;
-        }
-    };
-
-    if let Err(error) = runtime.block_on(initialize_schema(&pool)) {
-        let _ = init_tx.send(Err(error.to_string()));
-        return;
-    }
-
-    let restored_edges = match runtime.block_on(load_edge_states(&pool)) {
-        Ok(edges) => edges,
-        Err(error) => {
-            let _ = init_tx.send(Err(error.to_string()));
-            return;
-        }
-    };
-
-    if init_tx.send(Ok(restored_edges)).is_err() {
-        return;
-    }
-
-    while let Ok(command) = rx.recv() {
-        let result = match command {
-            StorageCommand::UpsertEdge(edge) => runtime.block_on(upsert_edge_state(&pool, &edge)),
-            StorageCommand::RecordAlert(alert) => runtime.block_on(record_alert(&pool, &alert)),
-        };
-        if let Err(error) = result {
-            eprintln!("skid-monitor-fe state db write failed: {error}");
-        }
-    }
-}
-
-async fn open_pool(path: &Path) -> Result<SqlitePool, String> {
+pub(super) async fn open_pool(path: &Path) -> Result<SqlitePool, String> {
     if let Some(parent) = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -169,7 +26,7 @@ async fn open_pool(path: &Path) -> Result<SqlitePool, String> {
         .map_err(|error| format!("failed to open {}: {error}", path.display()))
 }
 
-async fn initialize_schema(pool: &SqlitePool) -> sqlx::Result<()> {
+pub(super) async fn initialize_schema(pool: &SqlitePool) -> sqlx::Result<()> {
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS edge_state (
@@ -244,7 +101,7 @@ async fn initialize_schema(pool: &SqlitePool) -> sqlx::Result<()> {
     Ok(())
 }
 
-async fn load_edge_states(pool: &SqlitePool) -> sqlx::Result<Vec<PersistedEdgeState>> {
+pub(super) async fn load_edge_states(pool: &SqlitePool) -> sqlx::Result<Vec<PersistedEdgeState>> {
     let rows = sqlx::query(
         r#"
         SELECT
@@ -292,7 +149,10 @@ async fn load_edge_states(pool: &SqlitePool) -> sqlx::Result<Vec<PersistedEdgeSt
     Ok(states)
 }
 
-async fn upsert_edge_state(pool: &SqlitePool, edge: &PersistedEdgeState) -> sqlx::Result<()> {
+pub(super) async fn upsert_edge_state(
+    pool: &SqlitePool,
+    edge: &PersistedEdgeState,
+) -> sqlx::Result<()> {
     sqlx::query(
         r#"
         INSERT INTO edge_state (
@@ -345,7 +205,7 @@ async fn upsert_edge_state(pool: &SqlitePool, edge: &PersistedEdgeState) -> sqlx
     Ok(())
 }
 
-async fn record_alert(pool: &SqlitePool, alert: &AlertRecord) -> sqlx::Result<()> {
+pub(super) async fn record_alert(pool: &SqlitePool, alert: &AlertRecord) -> sqlx::Result<()> {
     sqlx::query(
         r#"
         INSERT INTO alert_events (
@@ -435,37 +295,6 @@ async fn upsert_alert_state(pool: &SqlitePool, alert: &AlertRecord) -> sqlx::Res
     Ok(())
 }
 
-fn state_db_path() -> PathBuf {
-    if let Ok(path) = std::env::var(config::STATE_DB_PATH_ENV) {
-        let trimmed = path.trim();
-        if !trimmed.is_empty() {
-            return PathBuf::from(trimmed);
-        }
-    }
-
-    if let Ok(state_home) = std::env::var("XDG_STATE_HOME") {
-        let trimmed = state_home.trim();
-        if !trimmed.is_empty() {
-            return PathBuf::from(trimmed)
-                .join("skid-monitor")
-                .join(config::STATE_DB_DEFAULT_FILE);
-        }
-    }
-
-    if let Ok(home) = std::env::var("HOME") {
-        let trimmed = home.trim();
-        if !trimmed.is_empty() {
-            return PathBuf::from(trimmed)
-                .join(".local")
-                .join("state")
-                .join("skid-monitor")
-                .join(config::STATE_DB_DEFAULT_FILE);
-        }
-    }
-
-    PathBuf::from(config::STATE_DB_DEFAULT_FILE)
-}
-
 fn transition_name(transition: AlertTransition) -> &'static str {
     match transition {
         AlertTransition::Fired => "fired",
@@ -477,70 +306,5 @@ fn status_name(status: AlertStatus) -> &'static str {
     match status {
         AlertStatus::Firing => "firing",
         AlertStatus::Resolved => "resolved",
-    }
-}
-
-fn unix_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_else(|_| Duration::from_millis(0))
-        .as_millis() as i64
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::edge::edge_key;
-
-    #[test]
-    fn sqlite_edge_state_round_trips() {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("runtime");
-        let path = temp_db_path("edge-round-trip");
-
-        runtime.block_on(async {
-            let pool = open_pool(&path).await.expect("open sqlite");
-            initialize_schema(&pool).await.expect("schema");
-            let edge = PersistedEdgeState {
-                key: edge_key("127.0.0.1:9000", "edge-a"),
-                endpoint: "127.0.0.1:9000".to_string(),
-                node: "edge-a".to_string(),
-                source: "edge_device".to_string(),
-                service: "skid-edge-agent".to_string(),
-                metric_points: 3,
-                spans: 0,
-                log_records: 0,
-                last_signal: "metrics".to_string(),
-                last_metric: "edge.temperature".to_string(),
-                last_value: "31.5".to_string(),
-                last_seen_unix_ms: unix_millis(),
-                severity: Some(AlertSeverity::Critical),
-            };
-
-            upsert_edge_state(&pool, &edge).await.expect("upsert edge");
-            let rows = load_edge_states(&pool).await.expect("load edges");
-
-            assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0].key, edge.key);
-            assert_eq!(rows[0].severity, Some(AlertSeverity::Critical));
-        });
-
-        cleanup_temp_db(&path);
-    }
-
-    fn temp_db_path(name: &str) -> PathBuf {
-        let suffix = unix_millis();
-        std::env::temp_dir().join(format!(
-            "skid-monitor-fe-{name}-{}-{suffix}.sqlite3",
-            std::process::id()
-        ))
-    }
-
-    fn cleanup_temp_db(path: &Path) {
-        for suffix in ["", "-wal", "-shm"] {
-            let _ = std::fs::remove_file(PathBuf::from(format!("{}{}", path.display(), suffix)));
-        }
     }
 }

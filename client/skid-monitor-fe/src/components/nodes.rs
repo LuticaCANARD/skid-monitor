@@ -6,13 +6,12 @@ use crate::model::AlertSeverity;
 use crate::model::NodeSummary;
 use crate::utils::{format_duration, shorten};
 use eframe::egui::{self, Color32, RichText};
-use std::collections::BTreeMap;
 use std::time::Instant;
 
 pub(crate) fn show(
     ui: &mut egui::Ui,
     compact: bool,
-    nodes: &BTreeMap<String, NodeSummary>,
+    nodes: &[&NodeSummary],
     decorations: &EdgeSignalDecorations,
     panel_width: f32,
     max_height: f32,
@@ -52,7 +51,7 @@ fn compact_node_table(
     ui: &mut egui::Ui,
     panel_width: f32,
     max_height: f32,
-    nodes: &BTreeMap<String, NodeSummary>,
+    nodes: &[&NodeSummary],
     decorations: &EdgeSignalDecorations,
 ) {
     let row_width = panel_width.max(1.0);
@@ -112,7 +111,7 @@ fn wide_node_table(
     ui: &mut egui::Ui,
     panel_width: f32,
     max_height: f32,
-    nodes: &BTreeMap<String, NodeSummary>,
+    nodes: &[&NodeSummary],
     decorations: &EdgeSignalDecorations,
 ) {
     let table_width = panel_width.max(980.0);
@@ -168,8 +167,8 @@ fn header_text(label: &str) -> RichText {
         .color(config::TABLE_HEADER_COLOR)
 }
 
-fn recent_rows(nodes: &BTreeMap<String, NodeSummary>) -> Vec<&NodeSummary> {
-    let mut rows = nodes.values().collect::<Vec<_>>();
+fn recent_rows<'a>(nodes: &[&'a NodeSummary]) -> Vec<&'a NodeSummary> {
+    let mut rows = nodes.to_vec();
     rows.sort_by(|left, right| {
         right
             .last_seen

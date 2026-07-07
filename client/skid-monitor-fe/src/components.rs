@@ -5,7 +5,6 @@ pub(crate) mod header;
 pub(crate) mod layout;
 pub(crate) mod main_panels;
 pub(crate) mod metrics;
-pub(crate) mod node_detail;
 pub(crate) mod nodes;
 mod primitives;
 pub(crate) mod trends;

@@ -4,6 +4,7 @@ mod components;
 mod config;
 mod edge;
 mod model;
+mod pages;
 mod signal;
 mod state;
 mod storage;

@@ -3,14 +3,8 @@ use crate::components::primitives::kind_color;
 use crate::config;
 use crate::model::EventRow;
 use eframe::egui::{self, RichText};
-use std::collections::VecDeque;
 
-pub(crate) fn show(
-    ui: &mut egui::Ui,
-    panel_width: f32,
-    max_height: f32,
-    events: &VecDeque<EventRow>,
-) {
+pub(crate) fn show(ui: &mut egui::Ui, panel_width: f32, max_height: f32, events: &[&EventRow]) {
     panel_frame(ui, panel_width, max_height, |ui, inner_size| {
         ui.heading("Event Log");
         ui.separator();
@@ -20,7 +14,7 @@ pub(crate) fn show(
             .auto_shrink([false, false])
             .max_height(panel_body_height(inner_size.y))
             .show(ui, |ui| {
-                for event in events {
+                for event in events.iter().copied() {
                     ui.horizontal(|ui| {
                         ui.label(
                             RichText::new(&event.time)

@@ -32,6 +32,6 @@ impl ControlRoomApp {
 impl eframe::App for ControlRoomApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.state.drain_messages(&self.rx);
-        ControlRoomView::new(self).show(ui);
+        ControlRoomView::new(&mut self.state, &mut self.ui).show(ui);
     }
 }

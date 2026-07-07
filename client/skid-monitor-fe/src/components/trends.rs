@@ -11,7 +11,7 @@ pub(crate) fn show(
     compact: bool,
     panel_width: f32,
     max_height: f32,
-    metrics: &VecDeque<MetricSample>,
+    metrics: &[&MetricSample],
     metric_history: &BTreeMap<String, VecDeque<f64>>,
 ) {
     panel_frame(ui, panel_width, max_height, |ui, inner_size| {
@@ -69,12 +69,12 @@ pub(crate) fn show(
 }
 
 fn visible_trend_keys(
-    metrics: &VecDeque<MetricSample>,
+    metrics: &[&MetricSample],
     metric_history: &BTreeMap<String, VecDeque<f64>>,
     max: usize,
 ) -> Vec<String> {
     let mut keys = Vec::new();
-    for sample in metrics.iter().rev() {
+    for sample in metrics.iter().rev().copied() {
         if sample.numeric.is_none() {
             continue;
         }
