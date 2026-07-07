@@ -72,6 +72,17 @@ pub(crate) const NODE_TABLE_MIN_WIDTH: f32 = 230.0;
 pub(crate) const NODE_EDGE_MARKER_WIDTH: f32 = 6.0;
 pub(crate) const NODE_EDGE_MARKER_HEIGHT: f32 = 18.0;
 
+pub(crate) const DATABASE_METRICS_HEIGHT_MIN: f32 = 108.0;
+pub(crate) const DATABASE_METRICS_HEIGHT_MAX: f32 = 170.0;
+pub(crate) const DATABASE_METRICS_HEIGHT_RATIO: f32 = 0.22;
+pub(crate) const DATABASE_METRICS_ROW_HEIGHT: f32 = 22.0;
+pub(crate) const DATABASE_METRICS_COMPACT_SYSTEM_WIDTH: f32 = 82.0;
+pub(crate) const DATABASE_METRICS_COMPACT_VALUE_WIDTH_MIN: f32 = 72.0;
+pub(crate) const DATABASE_METRICS_COMPACT_VALUE_WIDTH_MAX: f32 = 130.0;
+pub(crate) const DATABASE_METRICS_COMPACT_METRIC_MIN_WIDTH: f32 = 80.0;
+pub(crate) const DATABASE_METRICS_WIDE_SCROLL_MIN_WIDTH: f32 = 760.0;
+pub(crate) const DATABASE_METRICS_WIDE_MIN_COL_WIDTH: f32 = 76.0;
+
 pub(crate) const TRENDS_COMPACT_VISIBLE_COUNT: usize = 3;
 pub(crate) const TRENDS_WIDE_VISIBLE_COUNT: usize = 6;
 pub(crate) const TRENDS_COMPACT_NAME_CHARS: usize = 32;

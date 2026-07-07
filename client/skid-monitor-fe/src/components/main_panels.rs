@@ -1,5 +1,6 @@
 use crate::alert::AlertStore;
 use crate::components::{
+    database_metrics,
     layout::{LayoutMode, PanelLimits, graph_panel_width},
     metrics, nodes, trends,
 };
@@ -38,6 +39,7 @@ impl<'a> MainPanelData<'a> {
 #[derive(Clone, Copy)]
 enum MainPanel {
     Nodes,
+    Database,
     Trends,
     Metrics,
 }
@@ -59,6 +61,7 @@ impl PanelTemplate for MainPanel {
     fn height(self, limits: PanelLimits) -> f32 {
         match self {
             Self::Nodes => limits.sources_height,
+            Self::Database => limits.database_height,
             Self::Trends => limits.trends_height,
             Self::Metrics => limits.metrics_height,
         }
@@ -81,6 +84,9 @@ impl PanelTemplate for MainPanel {
                 panel_width,
                 panel_height,
             ),
+            Self::Database => {
+                database_metrics::show(ui, compact, panel_width, panel_height, &data.metrics)
+            }
             Self::Trends => trends::show(
                 ui,
                 compact,
@@ -101,8 +107,13 @@ impl PanelTemplate for MainPanel {
     }
 }
 
-const STACKED_PANELS: [MainPanel; 3] = [MainPanel::Nodes, MainPanel::Trends, MainPanel::Metrics];
-const GRAPH_PANELS: [MainPanel; 2] = [MainPanel::Nodes, MainPanel::Trends];
+const STACKED_PANELS: [MainPanel; 4] = [
+    MainPanel::Nodes,
+    MainPanel::Database,
+    MainPanel::Trends,
+    MainPanel::Metrics,
+];
+const GRAPH_PANELS: [MainPanel; 3] = [MainPanel::Nodes, MainPanel::Database, MainPanel::Trends];
 
 pub(crate) fn show(
     ui: &mut egui::Ui,

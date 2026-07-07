@@ -17,7 +17,7 @@ fn split_main_columns_end_at_the_same_height() {
     let limits = PanelLimits::for_remaining_height(520.0, LayoutMode::Split, gap);
 
     assert_close(
-        limits.sources_height + gap + limits.trends_height,
+        limits.sources_height + gap + limits.database_height + gap + limits.trends_height,
         limits.metrics_height,
     );
 }
@@ -28,7 +28,13 @@ fn stacked_main_panels_include_actual_gaps_in_the_height_budget() {
     let limits = PanelLimits::for_remaining_height(760.0, LayoutMode::Stacked, gap);
 
     assert_close(
-        limits.sources_height + gap + limits.trends_height + gap + limits.metrics_height,
+        limits.sources_height
+            + gap
+            + limits.database_height
+            + gap
+            + limits.trends_height
+            + gap
+            + limits.metrics_height,
         config::MAIN_AREA_HEIGHT,
     );
 }

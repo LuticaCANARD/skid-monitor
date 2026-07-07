@@ -1,5 +1,5 @@
 use crate::config;
-use crate::model::MetricSample;
+use crate::model::{DatabaseSystem, MetricSample, MetricSignalSubtype};
 use crate::utils::{format_f64, format_metric_value};
 use skid_protocol::otlp::tonic::common::v1::{AnyValue, KeyValue, any_value};
 use skid_protocol::otlp::tonic::metrics::v1::{Metric as OtlpMetric, metric, number_data_point};
@@ -11,6 +11,7 @@ const NODE_ID_ATTRIBUTE_KEYS: [&str; 5] = [
     "service.instance.id",
     "device_id",
 ];
+const DATABASE_SYSTEM_ATTRIBUTE_KEYS: [&str; 2] = ["db.system.name", "db.system"];
 
 pub(crate) fn metric_samples(
     request: &skid_protocol::otlp::ExportMetricsServiceRequest,
@@ -201,10 +202,24 @@ fn metric_sample(
     listener: &str,
 ) -> MetricSample {
     let node = node_identity(resource_attrs, point_attrs, service, source, listener);
+    let database_system = database_system(resource_attrs, point_attrs);
+    let signal_subtype = if database_system.is_some() {
+        MetricSignalSubtype::Database
+    } else {
+        MetricSignalSubtype::OpenTelemetry
+    };
     MetricSample {
         name: name.to_string(),
         value,
         numeric,
+        signal_subtype,
+        database_system,
+        database_namespace: attribute_value_in(point_attrs, resource_attrs, "db.namespace")
+            .unwrap_or_else(|| config::METRIC_EMPTY_FIELD.to_string()),
+        database_operation: attribute_value_in(point_attrs, resource_attrs, "db.operation.name")
+            .or_else(|| attribute_value_in(point_attrs, resource_attrs, "db.query.summary"))
+            .unwrap_or_else(|| config::METRIC_EMPTY_FIELD.to_string()),
+        database_target: database_target(resource_attrs, point_attrs),
         source: source.to_string(),
         service: service.to_string(),
         node: node.clone(),
@@ -212,6 +227,31 @@ fn metric_sample(
         kind: kind.to_string(),
         attributes: metric_attributes(service, scope, point_attrs),
         trend_key: trend_key(listener, name, source, &node, point_attrs),
+    }
+}
+
+fn database_system(
+    resource_attrs: &[KeyValue],
+    point_attrs: &[KeyValue],
+) -> Option<DatabaseSystem> {
+    DATABASE_SYSTEM_ATTRIBUTE_KEYS
+        .iter()
+        .find_map(|key| attribute_value_in(point_attrs, resource_attrs, key))
+        .and_then(|value| DatabaseSystem::from_otel(&value))
+}
+
+fn database_target(resource_attrs: &[KeyValue], point_attrs: &[KeyValue]) -> String {
+    let address = attribute_value_in(point_attrs, resource_attrs, "server.address")
+        .or_else(|| attribute_value_in(point_attrs, resource_attrs, "network.peer.address"));
+    let port = attribute_value_in(point_attrs, resource_attrs, "server.port")
+        .or_else(|| attribute_value_in(point_attrs, resource_attrs, "network.peer.port"));
+
+    match (address, port) {
+        (Some(address), Some(port)) if is_meaningful(&address) && is_meaningful(&port) => {
+            format!("{address}:{port}")
+        }
+        (Some(address), _) if is_meaningful(&address) => address,
+        _ => config::METRIC_EMPTY_FIELD.to_string(),
     }
 }
 
@@ -284,6 +324,14 @@ fn attribute_value(attributes: &[KeyValue], key: &str) -> Option<String> {
         .iter()
         .find(|attribute| attribute.key == key)
         .map(key_value)
+}
+
+fn attribute_value_in(
+    point_attrs: &[KeyValue],
+    resource_attrs: &[KeyValue],
+    key: &str,
+) -> Option<String> {
+    attribute_value(point_attrs, key).or_else(|| attribute_value(resource_attrs, key))
 }
 
 fn key_value(attribute: &KeyValue) -> String {

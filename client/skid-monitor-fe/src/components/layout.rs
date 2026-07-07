@@ -28,6 +28,7 @@ impl LayoutMode {
 pub(crate) struct PanelLimits {
     pub(crate) main_height: f32,
     pub(crate) sources_height: f32,
+    pub(crate) database_height: f32,
     pub(crate) trends_height: f32,
     pub(crate) metrics_height: f32,
     pub(crate) event_log_height: f32,
@@ -49,18 +50,27 @@ impl PanelLimits {
                     config::SOURCES_HEIGHT_MAX,
                 )
                 .min(main_height);
-                let trends_height = (main_height - sources_height - section_gap).max(0.0);
+                let database_height = clamped_extent(
+                    main_height,
+                    config::DATABASE_METRICS_HEIGHT_RATIO,
+                    config::DATABASE_METRICS_HEIGHT_MIN,
+                    config::DATABASE_METRICS_HEIGHT_MAX,
+                )
+                .min((main_height - sources_height - section_gap).max(0.0));
+                let trends_height =
+                    (main_height - sources_height - database_height - section_gap * 2.0).max(0.0);
 
                 Self {
                     main_height,
                     sources_height,
+                    database_height,
                     trends_height,
                     metrics_height: main_height,
                     event_log_height,
                 }
             }
             LayoutMode::Stacked | LayoutMode::Compact => {
-                let panel_budget = (main_height - section_gap * 2.0).max(0.0);
+                let panel_budget = (main_height - section_gap * 3.0).max(0.0);
                 let sources_height = clamped_extent(
                     panel_budget,
                     config::SOURCES_HEIGHT_RATIO,
@@ -68,18 +78,27 @@ impl PanelLimits {
                     config::SOURCES_HEIGHT_MAX,
                 )
                 .min(panel_budget);
+                let database_height = clamped_extent(
+                    panel_budget,
+                    config::DATABASE_METRICS_HEIGHT_RATIO,
+                    config::DATABASE_METRICS_HEIGHT_MIN,
+                    config::DATABASE_METRICS_HEIGHT_MAX,
+                )
+                .min((panel_budget - sources_height).max(0.0));
                 let metrics_height = clamped_extent(
                     panel_budget,
                     config::METRICS_TABLE_HEIGHT_RATIO,
                     config::METRICS_TABLE_HEIGHT_MIN,
                     config::METRICS_TABLE_HEIGHT_MAX,
                 )
-                .min((panel_budget - sources_height).max(0.0));
-                let trends_height = (panel_budget - sources_height - metrics_height).max(0.0);
+                .min((panel_budget - sources_height - database_height).max(0.0));
+                let trends_height =
+                    (panel_budget - sources_height - database_height - metrics_height).max(0.0);
 
                 Self {
                     main_height,
                     sources_height,
+                    database_height,
                     trends_height,
                     metrics_height,
                     event_log_height,

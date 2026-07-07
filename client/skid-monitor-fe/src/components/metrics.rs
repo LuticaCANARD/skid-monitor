@@ -146,6 +146,7 @@ fn wide_metrics_table(
                     table_header(ui, "value");
                     table_header(ui, "node");
                     table_header(ui, "source");
+                    table_header(ui, "subtype");
                     table_header(ui, "kind");
                     table_header(ui, "attrs");
                     ui.end_row();
@@ -171,6 +172,7 @@ fn wide_metrics_table(
                         ui.label(value);
                         ui.label(RichText::new(&sample.node).monospace());
                         ui.label(RichText::new(&sample.source).monospace());
+                        ui.label(RichText::new(sample.signal_subtype.as_str()).monospace());
                         ui.label(&sample.kind);
                         ui.label(RichText::new(&sample.attributes).small());
                         ui.end_row();

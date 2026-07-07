@@ -1,5 +1,6 @@
 pub(crate) mod agents;
 pub(crate) mod counters;
+pub(crate) mod database_metrics;
 pub(crate) mod event_log;
 pub(crate) mod header;
 pub(crate) mod layout;
