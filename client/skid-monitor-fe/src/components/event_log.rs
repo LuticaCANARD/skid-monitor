@@ -2,12 +2,25 @@ use crate::components::layout::{panel_body_height, panel_frame};
 use crate::components::primitives::kind_color;
 use crate::config;
 use crate::model::EventRow;
+use crate::utils::shorten;
 use eframe::egui::{self, RichText};
 
 pub(crate) fn show(ui: &mut egui::Ui, panel_width: f32, max_height: f32, events: &[&EventRow]) {
     panel_frame(ui, panel_width, max_height, |ui, inner_size| {
         ui.heading("Event Log");
         ui.separator();
+        if events.is_empty() {
+            ui.label(RichText::new("no events yet").color(config::PLACEHOLDER_TEXT_COLOR));
+            return;
+        }
+
+        let spacing = ui.spacing().item_spacing.x;
+        let message_width = (inner_size.x
+            - config::EVENT_LOG_TIME_WIDTH
+            - config::EVENT_LOG_KIND_WIDTH
+            - spacing * 2.0)
+            .max(120.0);
+
         egui::ScrollArea::vertical()
             .id_salt("event-log-scroll")
             .stick_to_bottom(true)
@@ -16,19 +29,36 @@ pub(crate) fn show(ui: &mut egui::Ui, panel_width: f32, max_height: f32, events:
             .show(ui, |ui| {
                 for event in events.iter().copied() {
                     ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new(&event.time)
-                                .monospace()
-                                .color(config::PLACEHOLDER_TEXT_COLOR),
+                        ui.add_sized(
+                            [config::EVENT_LOG_TIME_WIDTH, config::EVENT_LOG_ROW_HEIGHT],
+                            egui::Label::new(
+                                RichText::new(&event.time)
+                                    .monospace()
+                                    .color(config::PLACEHOLDER_TEXT_COLOR),
+                            ),
                         );
-                        ui.label(
-                            RichText::new(&event.kind)
-                                .monospace()
-                                .color(kind_color(&event.kind)),
+                        ui.add_sized(
+                            [config::EVENT_LOG_KIND_WIDTH, config::EVENT_LOG_ROW_HEIGHT],
+                            egui::Label::new(
+                                RichText::new(&event.kind)
+                                    .monospace()
+                                    .color(kind_color(&event.kind)),
+                            ),
                         );
-                        ui.label(&event.message);
+                        let message = shorten(&event.message, event_message_chars(message_width));
+                        let response = ui.add_sized(
+                            [message_width, config::EVENT_LOG_ROW_HEIGHT],
+                            egui::Label::new(message.clone()).truncate(),
+                        );
+                        if message != event.message {
+                            response.on_hover_text(&event.message);
+                        }
                     });
                 }
             });
     });
+}
+
+fn event_message_chars(width: f32) -> usize {
+    (width / 7.5).floor().clamp(18.0, 180.0) as usize
 }

@@ -50,6 +50,8 @@ pub(crate) const GLOBAL_ITEM_SPACING: Vec2 = Vec2::new(10.0, 8.0);
 pub(crate) const GLOBAL_BUTTON_PADDING: Vec2 = Vec2::new(10.0, 6.0);
 pub(crate) const SECTION_GAP: f32 = 12.0;
 pub(crate) const HEADER_COUNTER_GAP: f32 = 16.0;
+pub(crate) const HEADER_SUMMARY_GAP: f32 = 8.0;
+pub(crate) const HEADER_SUMMARY_CHIP_HEIGHT: f32 = 24.0;
 pub(crate) const PANEL_HEADER_HEIGHT: f32 = 42.0;
 pub(crate) const MAIN_AREA_HEIGHT: f32 = 560.0;
 
@@ -135,6 +137,11 @@ pub(crate) const ALERT_BADGE_RADIUS: u8 = 6;
 pub(crate) const ALERT_BADGE_MARGIN_X: i8 = 10;
 pub(crate) const ALERT_BADGE_MARGIN_Y: i8 = 5;
 pub(crate) const SETTINGS_BUTTON_WIDTH: f32 = 88.0;
+pub(crate) const SUMMARY_CHIP_BACKGROUND: Color32 = Color32::from_rgb(21, 26, 35);
+pub(crate) const SUMMARY_CHIP_BORDER_WIDTH: f32 = 1.0;
+pub(crate) const SUMMARY_CHIP_RADIUS: u8 = 6;
+pub(crate) const SUMMARY_CHIP_MARGIN_X: i8 = 8;
+pub(crate) const SUMMARY_CHIP_MARGIN_Y: i8 = 4;
 
 pub(crate) const PAGE_BACKGROUND: Color32 = Color32::from_rgb(15, 18, 24);
 pub(crate) const MUTED_TEXT_COLOR: Color32 = Color32::from_rgb(144, 155, 172);
@@ -152,6 +159,7 @@ pub(crate) const STATUS_BADGE_BORDER_WIDTH: f32 = 1.0;
 pub(crate) const STATUS_BADGE_RADIUS: u8 = 6;
 pub(crate) const STATUS_BADGE_MARGIN_X: i8 = 10;
 pub(crate) const STATUS_BADGE_MARGIN_Y: i8 = 5;
+pub(crate) const STATUS_BADGE_MAX_CHARS: usize = 34;
 
 pub(crate) const STAT_TILE_MARGIN: i8 = 10;
 pub(crate) const STAT_TILE_CONTENT_HEIGHT: f32 = 24.0;
@@ -177,6 +185,16 @@ pub(crate) const EVENT_ALERT_COLOR: Color32 = Color32::from_rgb(235, 92, 92);
 pub(crate) const EVENT_RESOLVED_COLOR: Color32 = Color32::from_rgb(76, 175, 112);
 pub(crate) const EVENT_AGENT_COLOR: Color32 = Color32::from_rgb(129, 201, 149);
 pub(crate) const EVENT_DEFAULT_COLOR: Color32 = Color32::from_gray(150);
+pub(crate) const EVENT_LOG_TIME_WIDTH: f32 = 72.0;
+pub(crate) const EVENT_LOG_KIND_WIDTH: f32 = 78.0;
+pub(crate) const EVENT_LOG_ROW_HEIGHT: f32 = 22.0;
+
+pub(crate) const AGENT_FILTER_WIDTH_COMPACT: f32 = 190.0;
+pub(crate) const AGENT_FILTER_WIDTH_WIDE: f32 = 260.0;
+pub(crate) const AGENT_FORM_FIELD_WIDTH_COMPACT: f32 = 210.0;
+pub(crate) const AGENT_FORM_FIELD_WIDTH_WIDE: f32 = 190.0;
+pub(crate) const AGENT_ACTION_BUTTON_WIDTH: f32 = 68.0;
+pub(crate) const AGENT_CONFIRM_BUTTON_WIDTH: f32 = 72.0;
 
 pub(crate) const METRIC_RESOURCE_SOURCE_KEY: &str = "skid_monitor.source";
 pub(crate) const METRIC_SERVICE_NAME_KEY: &str = "service.name";

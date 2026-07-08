@@ -1,4 +1,6 @@
-use super::db::{initialize_schema, load_edge_states, open_pool, upsert_edge_state};
+use super::db::{
+    delete_edge_state, initialize_schema, load_edge_states, open_pool, upsert_edge_state,
+};
 use super::unix_millis;
 use crate::edge::{PersistedEdgeState, edge_key};
 use crate::model::AlertSeverity;
@@ -37,6 +39,45 @@ fn sqlite_edge_state_round_trips() {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].key, edge.key);
         assert_eq!(rows[0].severity, Some(AlertSeverity::Critical));
+    });
+
+    cleanup_temp_db(&path);
+}
+
+#[test]
+fn sqlite_edge_state_delete_removes_persisted_agent() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let path = temp_db_path("edge-delete");
+
+    runtime.block_on(async {
+        let pool = open_pool(&path).await.expect("open sqlite");
+        initialize_schema(&pool).await.expect("schema");
+        let edge = PersistedEdgeState {
+            key: edge_key("127.0.0.1:9001", "edge-delete"),
+            endpoint: "127.0.0.1:9001".to_string(),
+            node: "edge-delete".to_string(),
+            source: "manual".to_string(),
+            service: "skid-monitor-agent".to_string(),
+            metric_points: 0,
+            spans: 0,
+            log_records: 0,
+            last_signal: "manual".to_string(),
+            last_metric: "registered".to_string(),
+            last_value: "pending".to_string(),
+            last_seen_unix_ms: unix_millis(),
+            severity: None,
+        };
+
+        upsert_edge_state(&pool, &edge).await.expect("upsert edge");
+        delete_edge_state(&pool, &edge.key)
+            .await
+            .expect("delete edge");
+        let rows = load_edge_states(&pool).await.expect("load edges");
+
+        assert!(rows.is_empty());
     });
 
     cleanup_temp_db(&path);

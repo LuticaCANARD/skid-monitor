@@ -65,7 +65,7 @@ fn show_toolbar(ui: &mut egui::Ui, node: &NodeSummary) -> Option<DetailAction> {
                 .color(ui.visuals().strong_text_color()),
         );
         ui.label(
-            RichText::new(format!("{} / {}", node.endpoint, node.service))
+            RichText::new(format!("via {} / {}", node.endpoint, node.service))
                 .monospace()
                 .color(ui.visuals().weak_text_color()),
         );

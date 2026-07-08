@@ -59,6 +59,17 @@ pub(crate) struct AlertSummary {
     pub(crate) highest_severity: Option<AlertSeverity>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct OperationalSummary {
+    pub(crate) agents: usize,
+    pub(crate) listeners: usize,
+    pub(crate) online: usize,
+    pub(crate) pending: usize,
+    pub(crate) warning: usize,
+    pub(crate) critical: usize,
+    pub(crate) storage_enabled: bool,
+}
+
 #[derive(Clone)]
 pub(crate) struct EventRow {
     pub(crate) time: String,

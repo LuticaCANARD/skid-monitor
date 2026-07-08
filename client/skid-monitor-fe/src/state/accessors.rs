@@ -1,8 +1,11 @@
 use super::DashboardState;
 use crate::alert::AlertStore;
 use crate::edge::EdgeSignalDecorations;
-use crate::model::{AlertSummary, EventRow, MetricSample, NodeSummary, SignalCounters, Status};
-use std::collections::{BTreeMap, VecDeque};
+use crate::model::{
+    AlertSeverity, AlertSummary, EventRow, MetricSample, NodeSummary, OperationalSummary,
+    SignalCounters, Status,
+};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 impl DashboardState {
     pub(crate) fn status(&self) -> &Status {
@@ -27,6 +30,10 @@ impl DashboardState {
 
     pub(crate) fn nodes(&self) -> &BTreeMap<String, NodeSummary> {
         &self.nodes
+    }
+
+    pub(crate) fn listeners(&self) -> &BTreeSet<String> {
+        &self.listeners
     }
 
     pub(crate) fn edge_decorations(&self) -> &EdgeSignalDecorations {
@@ -68,4 +75,32 @@ impl DashboardState {
         }
         summary
     }
+
+    pub(crate) fn operational_summary(&self) -> OperationalSummary {
+        let mut summary = OperationalSummary {
+            agents: self.nodes.len(),
+            listeners: self.listeners.len(),
+            storage_enabled: self.storage.is_some(),
+            ..OperationalSummary::default()
+        };
+
+        for node in self.nodes.values() {
+            match self
+                .edge_decorations
+                .get(&node.endpoint, &node.node)
+                .and_then(|edge| edge.severity)
+            {
+                Some(AlertSeverity::Critical) => summary.critical += 1,
+                Some(AlertSeverity::Warning) => summary.warning += 1,
+                None if node_signal_count(node) == 0 => summary.pending += 1,
+                None => summary.online += 1,
+            }
+        }
+
+        summary
+    }
+}
+
+fn node_signal_count(node: &NodeSummary) -> usize {
+    node.metric_points + node.spans + node.log_records
 }

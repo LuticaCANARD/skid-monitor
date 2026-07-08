@@ -110,16 +110,26 @@ fn remove_listener_frees_the_bound_port() {
 
     let addr = match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
         ReceiverMessage::Listening(addrs) => addrs.into_iter().next().unwrap(),
-        other => panic!("expected Listening, got a different message: {}", match other {
-            ReceiverMessage::Error { error, .. } => error,
-            ReceiverMessage::ExtensionError(error) => error,
-            _ => "signal".to_string(),
-        }),
+        other => panic!(
+            "expected Listening, got a different message: {}",
+            match other {
+                ReceiverMessage::Error { error, .. } => error,
+                ReceiverMessage::ExtensionError(error) => error,
+                _ => "signal".to_string(),
+            }
+        ),
     };
 
     ctrl_tx
         .send(ReceiverControl::RemoveListener(addr.clone()))
         .unwrap();
+
+    match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
+        ReceiverMessage::Listening(addrs) => assert!(addrs.is_empty()),
+        ReceiverMessage::Error { error, .. } => panic!("remove listener failed: {error}"),
+        ReceiverMessage::Signal { .. } => panic!("signal arrived while removing listener"),
+        ReceiverMessage::ExtensionError(error) => panic!("unexpected extension error: {error}"),
+    }
 
     // The receiver loop only notices `stop` after a wakeup connect unblocks
     // its pending `accept()`; poll until the OS actually lets us rebind the
@@ -134,4 +144,34 @@ fn remove_listener_frees_the_bound_port() {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[test]
+fn add_listener_reports_the_active_listener_snapshot() {
+    let (rx, ctrl_tx) =
+        spawn_receiver_managed_on_without_extension(vec!["127.0.0.1:0".to_string()]);
+
+    let first_addr = match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
+        ReceiverMessage::Listening(addrs) => {
+            assert_eq!(addrs.len(), 1);
+            addrs.into_iter().next().unwrap()
+        }
+        ReceiverMessage::Error { error, .. } => panic!("receiver failed to bind: {error}"),
+        ReceiverMessage::Signal { .. } => panic!("signal arrived before listener status"),
+        ReceiverMessage::ExtensionError(error) => panic!("unexpected extension error: {error}"),
+    };
+
+    ctrl_tx
+        .send(ReceiverControl::AddListener("127.0.0.1:0".to_string()))
+        .unwrap();
+
+    let addrs = match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
+        ReceiverMessage::Listening(addrs) => addrs,
+        ReceiverMessage::Error { error, .. } => panic!("add listener failed: {error}"),
+        ReceiverMessage::Signal { .. } => panic!("signal arrived while adding listener"),
+        ReceiverMessage::ExtensionError(error) => panic!("unexpected extension error: {error}"),
+    };
+
+    assert_eq!(addrs.len(), 2);
+    assert!(addrs.contains(&first_addr));
 }

@@ -5,7 +5,7 @@ use crate::edge::{EdgeSignalDecoration, EdgeSignalDecorations, edge_key};
 use crate::model::{AlertSeverity, NodeSummary};
 use crate::utils::{format_duration, shorten};
 use eframe::egui::{self, Color32, RichText, Stroke};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 #[derive(Default)]
@@ -23,6 +23,17 @@ impl AddAgentDraft {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct ListenerDraft {
+    pub(crate) addr: String,
+}
+
+impl ListenerDraft {
+    pub(crate) fn clear(&mut self) {
+        self.addr.clear();
+    }
+}
+
 pub(crate) struct AgentNotice<'a> {
     pub(crate) message: &'a str,
     pub(crate) is_error: bool,
@@ -37,16 +48,27 @@ pub(crate) enum AgentOverviewAction {
         node: String,
         service: String,
     },
-    Remove(String),
+    RequestRemove(String),
+    ConfirmRemove(String),
+    CancelRemove,
+    SaveListener(String),
+    RequestRemoveListener(String),
+    ConfirmRemoveListener(String),
+    CancelRemoveListener,
 }
 
 pub(crate) fn show(
     ui: &mut egui::Ui,
     compact: bool,
     nodes: &BTreeMap<String, NodeSummary>,
+    listeners: &BTreeSet<String>,
     decorations: &EdgeSignalDecorations,
     draft: &mut AddAgentDraft,
+    listener_draft: &mut ListenerDraft,
+    filter: &mut String,
     show_form: bool,
+    pending_remove_key: Option<&str>,
+    pending_remove_listener: Option<&str>,
     notice: Option<AgentNotice<'_>>,
     panel_width: f32,
     max_height: f32,
@@ -64,6 +86,17 @@ pub(crate) fn show(
             });
         });
         ui.separator();
+        listener_bar(
+            ui,
+            compact,
+            listeners,
+            listener_draft,
+            pending_remove_listener,
+            &mut action,
+        );
+        ui.add_space(config::SECTION_GAP * 0.5);
+        filter_bar(ui, compact, filter);
+        ui.add_space(config::SECTION_GAP * 0.5);
 
         if let Some(notice) = notice {
             let color = if notice.is_error {
@@ -82,8 +115,13 @@ pub(crate) fn show(
             ui.add_space(config::SECTION_GAP);
         }
 
+        let rows = recent_rows(nodes, filter);
         if nodes.is_empty() {
             ui.label(RichText::new("no agents yet").color(config::PLACEHOLDER_TEXT_COLOR));
+            return;
+        }
+        if rows.is_empty() {
+            ui.label(RichText::new("no agents match filter").color(config::PLACEHOLDER_TEXT_COLOR));
             return;
         }
 
@@ -92,8 +130,9 @@ pub(crate) fn show(
         agent_table(
             ui,
             compact,
-            nodes,
+            &rows,
             decorations,
+            pending_remove_key,
             inner_size.x,
             panel_body_height(table_height),
             &mut action,
@@ -101,6 +140,114 @@ pub(crate) fn show(
     });
 
     action
+}
+
+fn listener_bar(
+    ui: &mut egui::Ui,
+    compact: bool,
+    listeners: &BTreeSet<String>,
+    draft: &mut ListenerDraft,
+    pending_remove_listener: Option<&str>,
+    action: &mut Option<AgentOverviewAction>,
+) {
+    let input_width = if compact {
+        config::AGENT_FILTER_WIDTH_COMPACT
+    } else {
+        config::AGENT_FILTER_WIDTH_WIDE
+    };
+
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("Ingress listeners").color(config::TABLE_HEADER_COLOR));
+        ui.add(
+            egui::TextEdit::singleline(&mut draft.addr)
+                .desired_width(input_width)
+                .hint_text("127.0.0.1:9000"),
+        );
+        let can_add = !draft.addr.trim().is_empty();
+        let add = ui.add_enabled(can_add, egui::Button::new("Bind"));
+        if add.clicked() {
+            *action = Some(AgentOverviewAction::SaveListener(draft.addr.clone()));
+        }
+        if !can_add {
+            add.on_hover_text("listen address is required");
+        }
+    });
+
+    ui.horizontal_wrapped(|ui| {
+        if listeners.is_empty() {
+            ui.label(
+                RichText::new("no active ingress listeners").color(config::PLACEHOLDER_TEXT_COLOR),
+            );
+            return;
+        }
+
+        for listener in listeners {
+            listener_chip(ui, listener, pending_remove_listener, action);
+        }
+    });
+}
+
+fn listener_chip(
+    ui: &mut egui::Ui,
+    listener: &str,
+    pending_remove_listener: Option<&str>,
+    action: &mut Option<AgentOverviewAction>,
+) {
+    let remove_width = config::AGENT_ACTION_BUTTON_WIDTH;
+    let button_height = ui.spacing().interact_size.y;
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(listener).monospace());
+        if pending_remove_listener == Some(listener) {
+            if ui
+                .add_sized(
+                    [config::AGENT_CONFIRM_BUTTON_WIDTH, button_height],
+                    egui::Button::new(RichText::new("Confirm").color(config::STATUS_ERROR_COLOR)),
+                )
+                .clicked()
+            {
+                *action = Some(AgentOverviewAction::ConfirmRemoveListener(
+                    listener.to_string(),
+                ));
+            }
+            if ui
+                .add_sized([remove_width, button_height], egui::Button::new("Cancel"))
+                .clicked()
+            {
+                *action = Some(AgentOverviewAction::CancelRemoveListener);
+            }
+        } else if ui
+            .add_sized(
+                [remove_width, button_height],
+                egui::Button::new(RichText::new("Unbind").color(config::STATUS_ERROR_COLOR)),
+            )
+            .clicked()
+        {
+            *action = Some(AgentOverviewAction::RequestRemoveListener(
+                listener.to_string(),
+            ));
+        }
+    });
+}
+
+fn filter_bar(ui: &mut egui::Ui, compact: bool, filter: &mut String) {
+    let filter_width = if compact {
+        config::AGENT_FILTER_WIDTH_COMPACT
+    } else {
+        config::AGENT_FILTER_WIDTH_WIDE
+    };
+
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("Filter").color(config::TABLE_HEADER_COLOR));
+        ui.add(
+            egui::TextEdit::singleline(filter)
+                .desired_width(filter_width)
+                .hint_text("node, ingress, source"),
+        );
+        if !filter.trim().is_empty() && ui.button("Clear").clicked() {
+            filter.clear();
+        }
+    });
 }
 
 fn add_agent_form(
@@ -123,23 +270,64 @@ fn add_agent_form(
     frame.show(ui, |ui| {
         ui.set_width((form_width - f32::from(config::STAT_TILE_MARGIN) * 2.0).max(1.0));
         if compact {
-            form_field(ui, "endpoint", &mut draft.endpoint);
-            form_field(ui, "node", &mut draft.node);
-            form_field(ui, "service", &mut draft.service);
+            form_field(
+                ui,
+                "ingress",
+                &mut draft.endpoint,
+                config::AGENT_FORM_FIELD_WIDTH_COMPACT,
+                "127.0.0.1:9000",
+            );
+            form_field(
+                ui,
+                "node",
+                &mut draft.node,
+                config::AGENT_FORM_FIELD_WIDTH_COMPACT,
+                "edge-a",
+            );
+            form_field(
+                ui,
+                "service",
+                &mut draft.service,
+                config::AGENT_FORM_FIELD_WIDTH_COMPACT,
+                "skid-monitor-agent",
+            );
         } else {
             ui.horizontal(|ui| {
-                form_field(ui, "endpoint", &mut draft.endpoint);
-                form_field(ui, "node", &mut draft.node);
-                form_field(ui, "service", &mut draft.service);
+                form_field(
+                    ui,
+                    "ingress",
+                    &mut draft.endpoint,
+                    config::AGENT_FORM_FIELD_WIDTH_WIDE,
+                    "127.0.0.1:9000",
+                );
+                form_field(
+                    ui,
+                    "node",
+                    &mut draft.node,
+                    config::AGENT_FORM_FIELD_WIDTH_WIDE,
+                    "edge-a",
+                );
+                form_field(
+                    ui,
+                    "service",
+                    &mut draft.service,
+                    config::AGENT_FORM_FIELD_WIDTH_WIDE,
+                    "skid-monitor-agent",
+                );
             });
         }
         ui.horizontal(|ui| {
-            if ui.button("Save").clicked() {
+            let can_save = !draft.endpoint.trim().is_empty();
+            let save = ui.add_enabled(can_save, egui::Button::new("Save"));
+            if save.clicked() {
                 action = Some(AgentOverviewAction::SaveAdd {
                     endpoint: draft.endpoint.clone(),
                     node: draft.node.clone(),
                     service: draft.service.clone(),
                 });
+            }
+            if !can_save {
+                save.on_hover_text("ingress is required");
             }
             if ui.button("Cancel").clicked() {
                 action = Some(AgentOverviewAction::CancelAdd);
@@ -150,18 +338,23 @@ fn add_agent_form(
     action
 }
 
-fn form_field(ui: &mut egui::Ui, label: &str, value: &mut String) {
+fn form_field(ui: &mut egui::Ui, label: &str, value: &mut String, width: f32, hint: &str) {
     ui.vertical(|ui| {
         ui.label(RichText::new(label).color(config::TABLE_HEADER_COLOR));
-        ui.add(egui::TextEdit::singleline(value).desired_width(190.0));
+        ui.add(
+            egui::TextEdit::singleline(value)
+                .desired_width(width)
+                .hint_text(hint),
+        );
     });
 }
 
 fn agent_table(
     ui: &mut egui::Ui,
     compact: bool,
-    nodes: &BTreeMap<String, NodeSummary>,
+    rows: &[(String, &NodeSummary)],
     decorations: &EdgeSignalDecorations,
+    pending_remove_key: Option<&str>,
     panel_width: f32,
     max_height: f32,
     action: &mut Option<AgentOverviewAction>,
@@ -171,7 +364,6 @@ fn agent_table(
     } else {
         panel_width.max(1040.0)
     };
-    let rows = recent_rows(nodes);
 
     egui::ScrollArea::both()
         .id_salt("agents-table-scroll")
@@ -186,7 +378,7 @@ fn agent_table(
                 .show(ui, |ui| {
                     table_header(ui, "agent");
                     table_header(ui, "state");
-                    table_header(ui, "endpoint");
+                    table_header(ui, "ingress");
                     table_header(ui, "source");
                     table_header(ui, "service");
                     table_header(ui, "signals");
@@ -206,23 +398,72 @@ fn agent_table(
                         ui.label(RichText::new(signal_count(row).to_string()).strong());
                         ui.label(RichText::new(shorten(&last_signal(row), 34)).monospace());
                         ui.label(RichText::new(age(row)).monospace());
-                        ui.horizontal(|ui| {
-                            if ui.button("Open").clicked() {
-                                *action = Some(AgentOverviewAction::Select(key.clone()));
-                            }
-                            if ui.button("Remove").clicked() {
-                                *action = Some(AgentOverviewAction::Remove(key.clone()));
-                            }
-                        });
+                        row_actions(ui, key, pending_remove_key, action);
                         ui.end_row();
                     }
                 });
         });
 }
 
-fn recent_rows(nodes: &BTreeMap<String, NodeSummary>) -> Vec<(String, &NodeSummary)> {
+fn row_actions(
+    ui: &mut egui::Ui,
+    key: &str,
+    pending_remove_key: Option<&str>,
+    action: &mut Option<AgentOverviewAction>,
+) {
+    ui.horizontal(|ui| {
+        let button_height = ui.spacing().interact_size.y;
+        if pending_remove_key == Some(key) {
+            let confirm = egui::Button::new(
+                RichText::new("Confirm")
+                    .strong()
+                    .color(config::STATUS_ERROR_COLOR),
+            );
+            if ui
+                .add_sized([config::AGENT_CONFIRM_BUTTON_WIDTH, button_height], confirm)
+                .clicked()
+            {
+                *action = Some(AgentOverviewAction::ConfirmRemove(key.to_string()));
+            }
+            if ui
+                .add_sized(
+                    [config::AGENT_ACTION_BUTTON_WIDTH, button_height],
+                    egui::Button::new("Cancel"),
+                )
+                .clicked()
+            {
+                *action = Some(AgentOverviewAction::CancelRemove);
+            }
+        } else {
+            if ui
+                .add_sized(
+                    [config::AGENT_ACTION_BUTTON_WIDTH, button_height],
+                    egui::Button::new("Open"),
+                )
+                .clicked()
+            {
+                *action = Some(AgentOverviewAction::Select(key.to_string()));
+            }
+            if ui
+                .add_sized(
+                    [config::AGENT_ACTION_BUTTON_WIDTH, button_height],
+                    egui::Button::new(RichText::new("Remove").color(config::STATUS_ERROR_COLOR)),
+                )
+                .clicked()
+            {
+                *action = Some(AgentOverviewAction::RequestRemove(key.to_string()));
+            }
+        }
+    });
+}
+
+fn recent_rows<'a>(
+    nodes: &'a BTreeMap<String, NodeSummary>,
+    filter: &str,
+) -> Vec<(String, &'a NodeSummary)> {
     let mut rows = nodes
         .values()
+        .filter(|row| row_matches_filter(row, filter))
         .map(|row| (edge_key(&row.endpoint, &row.node), row))
         .collect::<Vec<_>>();
     rows.sort_by(|(_, left), (_, right)| {
@@ -232,6 +473,25 @@ fn recent_rows(nodes: &BTreeMap<String, NodeSummary>) -> Vec<(String, &NodeSumma
             .then_with(|| left.node.cmp(&right.node))
     });
     rows
+}
+
+fn row_matches_filter(row: &NodeSummary, filter: &str) -> bool {
+    let filter = filter.trim();
+    if filter.is_empty() {
+        return true;
+    }
+
+    let needle = filter.to_ascii_lowercase();
+    [
+        row.node.as_str(),
+        row.endpoint.as_str(),
+        row.source.as_str(),
+        row.service.as_str(),
+        row.last_metric.as_str(),
+        row.last_value.as_str(),
+    ]
+    .into_iter()
+    .any(|value| value.to_ascii_lowercase().contains(&needle))
 }
 
 fn state_label(
@@ -262,4 +522,35 @@ fn last_signal(row: &NodeSummary) -> String {
 
 fn age(row: &NodeSummary) -> String {
     format_duration(Instant::now().saturating_duration_since(row.last_seen))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node() -> NodeSummary {
+        NodeSummary {
+            node: "edge-alpha".to_string(),
+            endpoint: "127.0.0.1:9000".to_string(),
+            source: "macos".to_string(),
+            service: "skid-monitor-agent".to_string(),
+            metric_points: 3,
+            spans: 0,
+            log_records: 0,
+            last_metric: "system.cpu.usage".to_string(),
+            last_value: "32%".to_string(),
+            last_seen: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn agent_filter_matches_core_identity_fields() {
+        let node = node();
+
+        assert!(row_matches_filter(&node, "alpha"));
+        assert!(row_matches_filter(&node, "9000"));
+        assert!(row_matches_filter(&node, "MACOS"));
+        assert!(row_matches_filter(&node, "cpu"));
+        assert!(!row_matches_filter(&node, "postgres"));
+    }
 }

@@ -1,8 +1,7 @@
 /// sshfs client for file sharing
 use std::{
-    process, thread,time,
-    sync::{Arc, Mutex, mpsc}, 
-    fs,path
+    process,
+    sync::{Arc, Mutex},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -91,7 +90,6 @@ impl<'a> SshfsClient<'a> {
         self.state.lock().unwrap().clone()
     }
 }
-
 
 /// ssh open
 

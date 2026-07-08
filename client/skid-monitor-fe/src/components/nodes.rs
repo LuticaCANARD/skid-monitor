@@ -131,7 +131,7 @@ fn wide_node_table(
                 .show(ui, |ui| {
                     table_header(ui, "node");
                     table_header(ui, "state");
-                    table_header(ui, "endpoint");
+                    table_header(ui, "ingress");
                     table_header(ui, "source");
                     table_header(ui, "service");
                     table_header(ui, "points");

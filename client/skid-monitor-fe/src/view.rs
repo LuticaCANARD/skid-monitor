@@ -63,6 +63,7 @@ impl<'a> ControlRoomView<'a> {
                         compact,
                         self.state.status(),
                         self.state.alert_summary(),
+                        self.state.operational_summary(),
                     ) {
                         self.ui_state.settings_open = true;
                     }
@@ -141,8 +142,31 @@ impl<'a> ControlRoomView<'a> {
                 Ok(_) => self.ui_state.overview.registered_agent(),
                 Err(error) => self.ui_state.overview.rejected_agent(error),
             },
-            OverviewAction::Remove(key) => {
-                let _ = self.state.remove_agent(&key);
+            OverviewAction::RequestRemove(key) => {
+                self.ui_state.overview.request_remove(key);
+            }
+            OverviewAction::ConfirmRemove(key) => match self.state.remove_agent(&key) {
+                Ok(()) => self.ui_state.overview.removed_agent(),
+                Err(error) => self.ui_state.overview.rejected_remove(error),
+            },
+            OverviewAction::CancelRemove => {
+                self.ui_state.overview.cancel_remove();
+            }
+            OverviewAction::SaveListener(addr) => match self.state.add_listener(&addr) {
+                Ok(()) => self.ui_state.overview.bound_listener(),
+                Err(error) => self.ui_state.overview.rejected_listener(error),
+            },
+            OverviewAction::RequestRemoveListener(addr) => {
+                self.ui_state.overview.request_remove_listener(addr);
+            }
+            OverviewAction::ConfirmRemoveListener(addr) => {
+                match self.state.remove_listener(&addr) {
+                    Ok(()) => self.ui_state.overview.removed_listener(),
+                    Err(error) => self.ui_state.overview.rejected_listener(error),
+                }
+            }
+            OverviewAction::CancelRemoveListener => {
+                self.ui_state.overview.cancel_remove_listener();
             }
         }
     }

@@ -23,6 +23,7 @@ type ListenerRegistry = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
 
 /// Messages emitted by the shared receiver loop.
 pub enum ReceiverMessage {
+    /// Full snapshot of currently active client ingress listeners.
     Listening(Vec<String>),
     Signal {
         listener: String,
@@ -37,13 +38,13 @@ pub enum ReceiverMessage {
 
 /// Requests a caller can send back into a running receiver loop.
 pub enum ReceiverControl {
-    /// Bind an additional listen address at runtime, without restarting the
-    /// process. Success/failure is reported back over the existing
+    /// Bind an additional client ingress address at runtime, without restarting
+    /// the process. Success/failure is reported back over the existing
     /// `ReceiverMessage` channel (`Listening`/`Error`), same as startup binds.
     AddListener(String),
-    /// Stop and unbind a listener that is currently running (whether it came
-    /// from the initial configured batch or from `AddListener`), without
-    /// restarting the process.
+    /// Stop and unbind a client ingress listener that is currently running
+    /// (whether it came from the initial configured batch or from
+    /// `AddListener`), without restarting the process.
     RemoveListener(String),
 }
 
@@ -64,8 +65,7 @@ pub fn spawn_receiver_with_notify(
 }
 
 /// Like [`spawn_receiver_with_notify`], but also returns a control channel
-/// that lets callers ask the running loop to bind an additional listen
-/// address at runtime (e.g. from a UI "add agent" action), without
+/// that lets callers manage client ingress listeners at runtime, without
 /// restarting the process.
 pub fn spawn_receiver_managed_with_notify(
     notify: impl Fn() + Send + Sync + 'static,
@@ -157,25 +157,16 @@ fn spawn_receiver_configured(
         let extension = Arc::new(Mutex::new(extension));
 
         if !receivers.is_empty() {
-            let active_addrs = receivers
-                .iter()
-                .map(|(addr, _)| addr.clone())
-                .collect::<Vec<_>>();
-            if !send_message(
-                &tx,
-                notify.as_ref(),
-                ReceiverMessage::Listening(active_addrs),
-            ) {
-                return;
-            }
-
             for (addr, receiver) in receivers {
                 spawn_listener(&registry, addr, receiver, &tx, &extension, &notify);
             }
+            if !send_listener_snapshot(&registry, &tx, notify.as_ref()) {
+                return;
+            }
         }
 
-        // Stay alive after the initial batch so runtime "add/remove listener"
-        // requests can (un)bind sockets without restarting the process.
+        // Stay alive after the initial batch so runtime listener requests can
+        // (un)bind sockets without restarting the process.
         while let Ok(control) = ctrl_rx.recv() {
             match control {
                 ReceiverControl::AddListener(addr) => match SignalReceiver::bind(&addr) {
@@ -184,14 +175,10 @@ fn spawn_receiver_configured(
                             .local_addr()
                             .map(|resolved| resolved.to_string())
                             .unwrap_or_else(|_| addr.clone());
-                        if !send_message(
-                            &tx,
-                            notify.as_ref(),
-                            ReceiverMessage::Listening(vec![listen_addr.clone()]),
-                        ) {
+                        spawn_listener(&registry, listen_addr, receiver, &tx, &extension, &notify);
+                        if !send_listener_snapshot(&registry, &tx, notify.as_ref()) {
                             break;
                         }
-                        spawn_listener(&registry, listen_addr, receiver, &tx, &extension, &notify);
                     }
                     Err(err) => {
                         send_message(
@@ -205,7 +192,20 @@ fn spawn_receiver_configured(
                     }
                 },
                 ReceiverControl::RemoveListener(addr) => {
-                    stop_listener(&registry, &addr);
+                    if stop_listener(&registry, &addr) {
+                        if !send_listener_snapshot(&registry, &tx, notify.as_ref()) {
+                            break;
+                        }
+                    } else {
+                        send_message(
+                            &tx,
+                            notify.as_ref(),
+                            ReceiverMessage::Error {
+                                listener: Some(addr.clone()),
+                                error: format!("listener {addr} is not active"),
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -237,18 +237,22 @@ fn spawn_listener(
 
 /// Signals a running listener's thread to stop and unblocks its pending
 /// `accept()` call so the thread can actually observe the flag and exit.
-fn stop_listener(registry: &ListenerRegistry, addr: &str) {
-    let Some(stop) = registry.lock().ok().and_then(|mut listeners| listeners.remove(addr)) else {
-        return;
+fn stop_listener(registry: &ListenerRegistry, addr: &str) -> bool {
+    let Some(stop) = registry
+        .lock()
+        .ok()
+        .and_then(|mut listeners| listeners.remove(addr))
+    else {
+        return false;
     };
     stop.store(true, Ordering::Relaxed);
 
     // `TcpListener::accept` blocks indefinitely; open a throwaway local
     // connection to wake it up so the thread notices `stop` and exits.
-    let _ = TcpStream::connect_timeout(
-        &addr.parse().unwrap_or_else(|_| ([127, 0, 0, 1], 0).into()),
-        Duration::from_millis(200),
-    );
+    if let Ok(addr) = addr.parse() {
+        let _ = TcpStream::connect_timeout(&addr, Duration::from_millis(200));
+    }
+    true
 }
 
 fn receive_forever(
@@ -339,4 +343,25 @@ fn send_message(
         notify();
     }
     true
+}
+
+fn send_listener_snapshot(
+    registry: &ListenerRegistry,
+    tx: &Sender<ReceiverMessage>,
+    notify: Option<&NotifyReceiverUpdate>,
+) -> bool {
+    send_message(
+        tx,
+        notify,
+        ReceiverMessage::Listening(active_listeners(registry)),
+    )
+}
+
+fn active_listeners(registry: &ListenerRegistry) -> Vec<String> {
+    let mut addrs = registry
+        .lock()
+        .map(|listeners| listeners.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    addrs.sort();
+    addrs
 }

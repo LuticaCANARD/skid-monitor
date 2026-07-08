@@ -31,6 +31,7 @@ impl DashboardState {
             alerts: AlertStore::default(),
             alerts_enabled: true,
             storage: storage_init.storage,
+            listeners: Default::default(),
             listener_ctrl: None,
         };
 
@@ -41,8 +42,8 @@ impl DashboardState {
         state
     }
 
-    /// Wires up the channel used to ask the running receiver loop to bind an
-    /// additional listen address at runtime (see `register_agent`).
+    /// Wires up the channel used to ask the running receiver loop to manage
+    /// client ingress listeners at runtime.
     pub(crate) fn set_listener_control(&mut self, listener_ctrl: Sender<ReceiverControl>) {
         self.listener_ctrl = Some(listener_ctrl);
     }
@@ -76,7 +77,7 @@ impl DashboardState {
     ) -> Result<String, String> {
         let endpoint = endpoint.trim();
         if endpoint.is_empty() {
-            return Err("endpoint is required".to_string());
+            return Err("ingress is required".to_string());
         }
 
         let node = node.trim();
@@ -109,17 +110,8 @@ impl DashboardState {
         self.persist_edge(edge);
         self.push_event(
             "agent",
-            format!("registered observation agent {node} at {endpoint}"),
+            format!("registered observation agent {node} via {endpoint}"),
         );
-
-        // If the endpoint looks like a bindable socket address, ask the
-        // running receiver loop to also listen on it, so a new agent can be
-        // wired up from the FE without restarting the client process.
-        if endpoint.parse::<std::net::SocketAddr>().is_ok()
-            && let Some(listener_ctrl) = &self.listener_ctrl
-        {
-            let _ = listener_ctrl.send(ReceiverControl::AddListener(endpoint.to_string()));
-        }
 
         Ok(key)
     }
@@ -133,26 +125,59 @@ impl DashboardState {
         self.forget_edge(key);
         self.push_event(
             "agent",
-            format!("removed observation agent {} at {}", node.node, node.endpoint),
+            format!(
+                "removed observation agent {} via {}",
+                node.node, node.endpoint
+            ),
         );
 
-        // Mirror `register_agent`'s auto-bind: if this endpoint was a
-        // bindable socket address, ask the receiver loop to stop and unbind
-        // it too, so removing an agent actually frees the port.
-        if node.endpoint.parse::<std::net::SocketAddr>().is_ok()
-            && let Some(listener_ctrl) = &self.listener_ctrl
-        {
-            let _ = listener_ctrl.send(ReceiverControl::RemoveListener(node.endpoint.clone()));
+        Ok(())
+    }
+
+    pub(crate) fn add_listener(&mut self, addr: &str) -> Result<(), String> {
+        let addr = addr.trim();
+        if addr.is_empty() {
+            return Err("listen address is required".to_string());
+        }
+        if self.listeners.contains(addr) {
+            return Err(format!("listener {addr} is already active"));
         }
 
+        let Some(listener_ctrl) = &self.listener_ctrl else {
+            return Err("receiver control channel is unavailable".to_string());
+        };
+        listener_ctrl
+            .send(ReceiverControl::AddListener(addr.to_string()))
+            .map_err(|err| format!("failed to request listener bind: {err}"))?;
+        self.push_event("receiver", format!("requested listener bind on {addr}"));
+        Ok(())
+    }
+
+    pub(crate) fn remove_listener(&mut self, addr: &str) -> Result<(), String> {
+        let addr = addr.trim();
+        if addr.is_empty() {
+            return Err("listen address is required".to_string());
+        }
+        if !self.listeners.contains(addr) {
+            return Err(format!("listener {addr} is not active"));
+        }
+
+        let Some(listener_ctrl) = &self.listener_ctrl else {
+            return Err("receiver control channel is unavailable".to_string());
+        };
+        listener_ctrl
+            .send(ReceiverControl::RemoveListener(addr.to_string()))
+            .map_err(|err| format!("failed to request listener removal: {err}"))?;
+        self.push_event("receiver", format!("requested listener removal for {addr}"));
         Ok(())
     }
 
     fn observe_listening(&mut self, addrs: Vec<String>) {
         let label = listener_status_label(&addrs);
+        self.listeners = addrs.iter().cloned().collect();
         self.listening_label = Some(label.clone());
         self.status = Status::Listening(label);
-        self.push_event("receiver", "receiver ready");
+        self.push_event("receiver", listener_event_message(&addrs));
         if self.alerts_enabled {
             for addr in addrs {
                 let change = self
@@ -190,8 +215,72 @@ impl DashboardState {
 }
 
 fn listener_status_label(addrs: &[String]) -> String {
+    let count = addrs.len();
+    match count {
+        0 => "receiver idle".to_string(),
+        1 => "receiver ready (1 listener)".to_string(),
+        _ => format!("receiver ready ({count} listeners)"),
+    }
+}
+
+fn listener_event_message(addrs: &[String]) -> String {
     match addrs {
-        [] => "receiver idle".to_string(),
-        _ => "receiver ready".to_string(),
+        [] => "receiver has no active listeners".to_string(),
+        [addr] => format!("receiver listening on {addr}"),
+        _ => format!("receiver listening on {} ingress addresses", addrs.len()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    fn empty_state() -> DashboardState {
+        DashboardState {
+            status: Status::Starting,
+            listening_label: None,
+            counters: SignalCounters::default(),
+            events: VecDeque::new(),
+            metrics: VecDeque::new(),
+            metric_history: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            edge_decorations: EdgeSignalDecorations::default(),
+            alerts: AlertStore::default(),
+            alerts_enabled: true,
+            storage: None,
+            listeners: Default::default(),
+            listener_ctrl: None,
+        }
+    }
+
+    #[test]
+    fn registering_agent_does_not_bind_a_listener_implicitly() {
+        let (tx, rx) = mpsc::channel();
+        let mut state = empty_state();
+        state.set_listener_control(tx);
+
+        state
+            .register_agent("127.0.0.1:9300", "agent-a", "skid-monitor-agent")
+            .unwrap();
+
+        assert!(rx.try_recv().is_err());
+        assert!(state.listeners.is_empty());
+    }
+
+    #[test]
+    fn listener_bind_is_an_explicit_receiver_control_request() {
+        let (tx, rx) = mpsc::channel();
+        let mut state = empty_state();
+        state.set_listener_control(tx);
+
+        state.add_listener("127.0.0.1:9300").unwrap();
+
+        match rx.try_recv().unwrap() {
+            ReceiverControl::AddListener(addr) => assert_eq!(addr, "127.0.0.1:9300"),
+            ReceiverControl::RemoveListener(addr) => {
+                panic!("expected AddListener, got RemoveListener({addr})")
+            }
+        }
     }
 }

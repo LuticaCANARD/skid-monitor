@@ -1,29 +1,38 @@
 use crate::components::primitives::{
-    alert_badge, alert_badge_width, status_badge, status_badge_width,
+    alert_badge, alert_badge_width, status_badge, status_badge_width, summary_chip,
 };
 use crate::config;
-use crate::model::{AlertSummary, Status};
-use eframe::egui::{self, RichText};
+use crate::model::{AlertSummary, OperationalSummary, Status};
+use eframe::egui::{self, Color32, RichText};
 
 pub(crate) fn show(
     ui: &mut egui::Ui,
     compact: bool,
     status: &Status,
     alert_summary: AlertSummary,
+    operational_summary: OperationalSummary,
 ) -> bool {
     if compact {
-        show_compact(ui, status, alert_summary)
+        show_compact(ui, status, alert_summary, operational_summary)
     } else {
-        show_wide(ui, status, alert_summary)
+        show_wide(ui, status, alert_summary, operational_summary)
     }
 }
 
-fn show_wide(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) -> bool {
+fn show_wide(
+    ui: &mut egui::Ui,
+    status: &Status,
+    alert_summary: AlertSummary,
+    operational_summary: OperationalSummary,
+) -> bool {
     let mut settings_clicked = false;
     let available_width = ui.available_width().max(1.0);
-    let header_height =
-        (config::APP_TITLE_SIZE + config::APP_SUBTITLE_SIZE + ui.spacing().item_spacing.y)
-            .max(ui.spacing().interact_size.y);
+    let header_height = (config::APP_TITLE_SIZE
+        + config::APP_SUBTITLE_SIZE
+        + config::HEADER_SUMMARY_CHIP_HEIGHT
+        + ui.spacing().item_spacing.y
+        + config::HEADER_SUMMARY_GAP)
+        .max(ui.spacing().interact_size.y);
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(available_width, header_height),
         egui::Sense::hover(),
@@ -47,7 +56,7 @@ fn show_wide(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) ->
             .max_rect(title_rect)
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
-    title(&mut title_ui);
+    title(&mut title_ui, operational_summary);
 
     let mut status_ui = ui.new_child(
         egui::UiBuilder::new()
@@ -74,10 +83,15 @@ fn show_wide(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) ->
     settings_clicked
 }
 
-fn show_compact(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary) -> bool {
+fn show_compact(
+    ui: &mut egui::Ui,
+    status: &Status,
+    alert_summary: AlertSummary,
+    operational_summary: OperationalSummary,
+) -> bool {
     let mut settings_clicked = false;
     ui.horizontal_wrapped(|ui| {
-        title(ui);
+        title(ui, operational_summary);
         status_badge(ui, status);
         alert_badge(ui, alert_summary);
         if ui.button("Settings").clicked() {
@@ -87,7 +101,7 @@ fn show_compact(ui: &mut egui::Ui, status: &Status, alert_summary: AlertSummary)
     settings_clicked
 }
 
-fn title(ui: &mut egui::Ui) {
+fn title(ui: &mut egui::Ui, summary: OperationalSummary) {
     ui.vertical(|ui| {
         ui.label(
             RichText::new(config::APP_TITLE)
@@ -100,5 +114,74 @@ fn title(ui: &mut egui::Ui) {
                 .size(config::APP_SUBTITLE_SIZE)
                 .color(ui.visuals().weak_text_color()),
         );
+        ui.add_space(config::HEADER_SUMMARY_GAP);
+        summary_strip(ui, summary);
+    });
+}
+
+fn summary_strip(ui: &mut egui::Ui, summary: OperationalSummary) {
+    ui.horizontal_wrapped(|ui| {
+        summary_chip(
+            ui,
+            format!("agents {}", summary.agents),
+            ui.visuals().weak_text_color(),
+            Some(format!("{} registered observation agents", summary.agents)),
+        );
+        summary_chip(
+            ui,
+            format!("listeners {}", summary.listeners),
+            config::EVENT_METRICS_COLOR,
+            Some(format!(
+                "{} active client ingress listeners",
+                summary.listeners
+            )),
+        );
+        summary_chip(
+            ui,
+            format!("online {}", summary.online),
+            config::STATUS_LISTENING_COLOR,
+            Some(format!("{} agents have reported signals", summary.online)),
+        );
+        if summary.pending > 0 {
+            summary_chip(
+                ui,
+                format!("pending {}", summary.pending),
+                config::MUTED_TEXT_COLOR,
+                Some(format!(
+                    "{} registered agents have not sent signals",
+                    summary.pending
+                )),
+            );
+        }
+        if summary.warning > 0 {
+            summary_chip(
+                ui,
+                format!("warning {}", summary.warning),
+                config::ALERT_WARNING_COLOR,
+                Some(format!("{} agents have warning alerts", summary.warning)),
+            );
+        }
+        if summary.critical > 0 {
+            summary_chip(
+                ui,
+                format!("critical {}", summary.critical),
+                config::ALERT_CRITICAL_COLOR,
+                Some(format!("{} agents have critical alerts", summary.critical)),
+            );
+        }
+        let (storage_label, storage_color, tooltip) = if summary.storage_enabled {
+            (
+                "state saved",
+                config::STATUS_LISTENING_COLOR,
+                "SQLite state persistence is active",
+            )
+        } else {
+            (
+                "volatile state",
+                Color32::from_rgb(210, 168, 74),
+                "State persistence is disabled for this session",
+            )
+        };
+        summary_chip(ui, storage_label, storage_color, Some(tooltip.to_string()));
     });
 }

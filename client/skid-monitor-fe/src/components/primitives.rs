@@ -1,5 +1,6 @@
 use crate::config;
 use crate::model::{AlertSeverity, AlertSummary, Status};
+use crate::utils::shorten;
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 use std::collections::VecDeque;
 
@@ -64,7 +65,8 @@ pub(crate) fn draw_sparkline(ui: &mut egui::Ui, values: &VecDeque<f64>, height: 
 }
 
 pub(crate) fn status_badge(ui: &mut egui::Ui, status: &Status) {
-    let (label, color) = status_badge_label(status);
+    let (full_label, color) = status_badge_label(status);
+    let label = shorten(&full_label, config::STATUS_BADGE_MAX_CHARS);
 
     egui::Frame::default()
         .fill(config::STATUS_BADGE_BACKGROUND)
@@ -75,12 +77,16 @@ pub(crate) fn status_badge(ui: &mut egui::Ui, status: &Status) {
             config::STATUS_BADGE_MARGIN_Y,
         ))
         .show(ui, |ui| {
-            ui.label(RichText::new(label).monospace().color(color));
+            let response = ui.label(RichText::new(&label).monospace().color(color));
+            if label != full_label {
+                response.on_hover_text(full_label);
+            }
         });
 }
 
 pub(crate) fn status_badge_width(ui: &egui::Ui, status: &Status) -> f32 {
     let (label, color) = status_badge_label(status);
+    let label = shorten(&label, config::STATUS_BADGE_MAX_CHARS);
     let font_id = egui::TextStyle::Monospace.resolve(ui.style());
     let text_width = ui.painter().layout_no_wrap(label, font_id, color).size().x;
 
@@ -116,6 +122,29 @@ pub(crate) fn alert_color(severity: AlertSeverity) -> Color32 {
         AlertSeverity::Warning => config::ALERT_WARNING_COLOR,
         AlertSeverity::Critical => config::ALERT_CRITICAL_COLOR,
     }
+}
+
+pub(crate) fn summary_chip(
+    ui: &mut egui::Ui,
+    label: impl Into<String>,
+    color: Color32,
+    tooltip: Option<String>,
+) {
+    let label = label.into();
+    egui::Frame::default()
+        .fill(config::SUMMARY_CHIP_BACKGROUND)
+        .stroke(Stroke::new(config::SUMMARY_CHIP_BORDER_WIDTH, color))
+        .corner_radius(egui::CornerRadius::same(config::SUMMARY_CHIP_RADIUS))
+        .inner_margin(egui::Margin::symmetric(
+            config::SUMMARY_CHIP_MARGIN_X,
+            config::SUMMARY_CHIP_MARGIN_Y,
+        ))
+        .show(ui, |ui| {
+            let response = ui.label(RichText::new(label).monospace().small().color(color));
+            if let Some(tooltip) = tooltip {
+                response.on_hover_text(tooltip);
+            }
+        });
 }
 
 fn status_badge_label(status: &Status) -> (String, Color32) {

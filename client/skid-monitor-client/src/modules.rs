@@ -1,1 +1,1 @@
-pub(crate) mod file_share;
+pub mod file_share;
