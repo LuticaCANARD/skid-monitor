@@ -7,11 +7,19 @@
 use crate::extension::ExtensionHost;
 use crate::receiver::{Receiver as SignalReceiver, listen_addrs};
 use skid_protocol::protocol::Signal;
+use std::collections::HashMap;
+use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 type NotifyReceiverUpdate = Arc<dyn Fn() + Send + Sync + 'static>;
+/// Per-listener shutdown flags, keyed by resolved listen address, so a
+/// `RemoveListener` request can find and stop the right `receive_forever`
+/// thread.
+type ListenerRegistry = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
 
 /// Messages emitted by the shared receiver loop.
 pub enum ReceiverMessage {
@@ -33,6 +41,10 @@ pub enum ReceiverControl {
     /// process. Success/failure is reported back over the existing
     /// `ReceiverMessage` channel (`Listening`/`Error`), same as startup binds.
     AddListener(String),
+    /// Stop and unbind a listener that is currently running (whether it came
+    /// from the initial configured batch or from `AddListener`), without
+    /// restarting the process.
+    RemoveListener(String),
 }
 
 /// Starts the shared receiver loop on a background thread.
@@ -74,6 +86,13 @@ pub(crate) fn spawn_receiver_on_without_extension(addrs: Vec<String>) -> Receive
     spawn_receiver_configured(addrs, false, None).0
 }
 
+#[cfg(test)]
+pub(crate) fn spawn_receiver_managed_on_without_extension(
+    addrs: Vec<String>,
+) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
+    spawn_receiver_configured(addrs, false, None)
+}
+
 fn spawn_receiver_configured(
     addrs: Vec<String>,
     start_extension: bool,
@@ -83,6 +102,7 @@ fn spawn_receiver_configured(
     let (ctrl_tx, ctrl_rx) = mpsc::channel::<ReceiverControl>();
 
     thread::spawn(move || {
+        let registry: ListenerRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut receivers = Vec::new();
         for configured_addr in addrs {
             match SignalReceiver::bind(&configured_addr) {
@@ -150,45 +170,42 @@ fn spawn_receiver_configured(
             }
 
             for (addr, receiver) in receivers {
-                let tx = tx.clone();
-                let extension = Arc::clone(&extension);
-                let notify = notify.clone();
-                thread::spawn(move || receive_forever(addr, receiver, tx, extension, notify));
+                spawn_listener(&registry, addr, receiver, &tx, &extension, &notify);
             }
         }
 
-        // Stay alive after the initial batch so runtime "add listener"
-        // requests can bind more sockets without restarting the process.
-        while let Ok(ReceiverControl::AddListener(addr)) = ctrl_rx.recv() {
-            match SignalReceiver::bind(&addr) {
-                Ok(receiver) => {
-                    let listen_addr = receiver
-                        .local_addr()
-                        .map(|resolved| resolved.to_string())
-                        .unwrap_or_else(|_| addr.clone());
-                    if !send_message(
-                        &tx,
-                        notify.as_ref(),
-                        ReceiverMessage::Listening(vec![listen_addr.clone()]),
-                    ) {
-                        break;
+        // Stay alive after the initial batch so runtime "add/remove listener"
+        // requests can (un)bind sockets without restarting the process.
+        while let Ok(control) = ctrl_rx.recv() {
+            match control {
+                ReceiverControl::AddListener(addr) => match SignalReceiver::bind(&addr) {
+                    Ok(receiver) => {
+                        let listen_addr = receiver
+                            .local_addr()
+                            .map(|resolved| resolved.to_string())
+                            .unwrap_or_else(|_| addr.clone());
+                        if !send_message(
+                            &tx,
+                            notify.as_ref(),
+                            ReceiverMessage::Listening(vec![listen_addr.clone()]),
+                        ) {
+                            break;
+                        }
+                        spawn_listener(&registry, listen_addr, receiver, &tx, &extension, &notify);
                     }
-                    let tx = tx.clone();
-                    let extension = Arc::clone(&extension);
-                    let notify = notify.clone();
-                    thread::spawn(move || {
-                        receive_forever(listen_addr, receiver, tx, extension, notify)
-                    });
-                }
-                Err(err) => {
-                    send_message(
-                        &tx,
-                        notify.as_ref(),
-                        ReceiverMessage::Error {
-                            listener: Some(addr.clone()),
-                            error: format!("failed to bind {addr}: {err}"),
-                        },
-                    );
+                    Err(err) => {
+                        send_message(
+                            &tx,
+                            notify.as_ref(),
+                            ReceiverMessage::Error {
+                                listener: Some(addr.clone()),
+                                error: format!("failed to bind {addr}: {err}"),
+                            },
+                        );
+                    }
+                },
+                ReceiverControl::RemoveListener(addr) => {
+                    stop_listener(&registry, &addr);
                 }
             }
         }
@@ -197,16 +214,60 @@ fn spawn_receiver_configured(
     (rx, ctrl_tx)
 }
 
+/// Spawns the receive thread for one bound listener and registers its stop
+/// flag so a later `RemoveListener` request can find and signal it.
+fn spawn_listener(
+    registry: &ListenerRegistry,
+    addr: String,
+    receiver: SignalReceiver,
+    tx: &Sender<ReceiverMessage>,
+    extension: &Arc<Mutex<Option<ExtensionHost>>>,
+    notify: &Option<NotifyReceiverUpdate>,
+) {
+    let stop = Arc::new(AtomicBool::new(false));
+    if let Ok(mut listeners) = registry.lock() {
+        listeners.insert(addr.clone(), Arc::clone(&stop));
+    }
+
+    let tx = tx.clone();
+    let extension = Arc::clone(extension);
+    let notify = notify.clone();
+    thread::spawn(move || receive_forever(addr, receiver, tx, extension, notify, stop));
+}
+
+/// Signals a running listener's thread to stop and unblocks its pending
+/// `accept()` call so the thread can actually observe the flag and exit.
+fn stop_listener(registry: &ListenerRegistry, addr: &str) {
+    let Some(stop) = registry.lock().ok().and_then(|mut listeners| listeners.remove(addr)) else {
+        return;
+    };
+    stop.store(true, Ordering::Relaxed);
+
+    // `TcpListener::accept` blocks indefinitely; open a throwaway local
+    // connection to wake it up so the thread notices `stop` and exits.
+    let _ = TcpStream::connect_timeout(
+        &addr.parse().unwrap_or_else(|_| ([127, 0, 0, 1], 0).into()),
+        Duration::from_millis(200),
+    );
+}
+
 fn receive_forever(
     addr: String,
     receiver: SignalReceiver,
     tx: Sender<ReceiverMessage>,
     extension: Arc<Mutex<Option<ExtensionHost>>>,
     notify: Option<NotifyReceiverUpdate>,
+    stop: Arc<AtomicBool>,
 ) {
     loop {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
         match receiver.recv() {
             Ok(signal) => {
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
                 publish_to_extension(&signal, &tx, &extension, notify.as_ref());
                 if !send_message(
                     &tx,
@@ -219,6 +280,7 @@ fn receive_forever(
                     break;
                 }
             }
+            Err(_) if stop.load(Ordering::Relaxed) => break,
             Err(err) => {
                 if !send_message(
                     &tx,

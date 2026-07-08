@@ -7,4 +7,10 @@ impl DashboardState {
             storage.persist_edge(&edge);
         }
     }
+
+    pub(in crate::state) fn forget_edge(&self, key: &str) {
+        if let Some(storage) = &self.storage {
+            storage.delete_edge(key);
+        }
+    }
 }

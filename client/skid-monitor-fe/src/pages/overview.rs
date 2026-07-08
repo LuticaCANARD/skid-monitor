@@ -27,6 +27,7 @@ pub(crate) enum OverviewAction {
         node: String,
         service: String,
     },
+    Remove(String),
 }
 
 impl Default for OverviewState {
@@ -120,6 +121,7 @@ impl From<AgentOverviewAction> for OverviewAction {
                 node,
                 service,
             },
+            AgentOverviewAction::Remove(key) => Self::Remove(key),
         }
     }
 }

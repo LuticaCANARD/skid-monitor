@@ -45,12 +45,9 @@ impl SignalExporters {
 
 async fn export_one(name: &str, exporter: &ExporterConfig, signal: &Signal) -> Result<(), String> {
     match exporter {
-        ExporterConfig::SkidClient {
-            addr,
-            log_when_missing,
-        } => {
+        ExporterConfig::SkidClient { addr } => {
             let resolved_addr = resolve_client_addr(addr.as_ref());
-            transport::send_to_client(signal, resolved_addr.as_deref(), *log_when_missing)
+            transport::send_to_client(signal, resolved_addr.as_deref())
         }
         ExporterConfig::Logging { include_json } => {
             if *include_json {

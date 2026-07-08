@@ -49,6 +49,7 @@ pub(super) fn run_storage(
             StorageCommand::UpsertEdge(edge) => {
                 runtime.block_on(db::upsert_edge_state(&pool, &edge))
             }
+            StorageCommand::DeleteEdge(key) => runtime.block_on(db::delete_edge_state(&pool, &key)),
             StorageCommand::RecordAlert(alert) => runtime.block_on(db::record_alert(&pool, &alert)),
         };
         if let Err(error) = result {

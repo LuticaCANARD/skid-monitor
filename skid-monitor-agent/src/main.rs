@@ -37,6 +37,7 @@ async fn main() {
     let guard = telemetry::init();
     let pipeline = SignalPipeline::from_config(&config);
     info!("skid-monitor agent starting...");
+    log_skid_client_targets(&config);
 
     if config.receivers.device.enabled {
         let addr = config.receivers.device.listen_addr.clone();
@@ -141,4 +142,22 @@ fn log_count(request: &ExportLogsServiceRequest) -> usize {
         .flat_map(|rl| &rl.scope_logs)
         .map(|sl| sl.log_records.len())
         .sum()
+}
+
+/// 부팅 시 한 번, skid client exporter가 실제로 어디로 보내려는지 로그로 남긴다.
+///
+/// 매 주기 반복하는 로그가 아니라 부팅 시 단발성이므로, 이전에 없앤 "client 미연결"
+/// 피드백 루프(자기 텔레메트리가 다시 로그를 만들어 무한 증폭되던 버그)를 재현하지 않는다.
+fn log_skid_client_targets(config: &config::AgentConfig) {
+    for (name, exporter) in &config.exporters {
+        if let config::ExporterConfig::SkidClient { addr } = exporter {
+            match addr {
+                Some(addr) => info!(exporter = %name, %addr, "skid client exporter target"),
+                None => warn!(
+                    exporter = %name,
+                    "skid client exporter has no target address (set SKID_MONITOR_CLIENT_ADDR) — signals will be silently dropped"
+                ),
+            }
+        }
+    }
 }

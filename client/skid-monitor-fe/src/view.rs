@@ -141,6 +141,9 @@ impl<'a> ControlRoomView<'a> {
                 Ok(_) => self.ui_state.overview.registered_agent(),
                 Err(error) => self.ui_state.overview.rejected_agent(error),
             },
+            OverviewAction::Remove(key) => {
+                let _ = self.state.remove_agent(&key);
+            }
         }
     }
 

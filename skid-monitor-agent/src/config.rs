@@ -73,8 +73,6 @@ pub enum ExporterConfig {
     SkidClient {
         #[serde(default)]
         addr: Option<String>,
-        #[serde(default = "default_true")]
-        log_when_missing: bool,
     },
     Logging {
         #[serde(default)]
@@ -327,7 +325,6 @@ fn default_exporters() -> BTreeMap<String, ExporterConfig> {
         "skid".to_string(),
         ExporterConfig::SkidClient {
             addr: env_or_legacy("SKID_MONITOR_CLIENT_ADDR", "MONITOR_CAT_CLIENT_ADDR").ok(),
-            log_when_missing: true,
         },
     );
     exporters

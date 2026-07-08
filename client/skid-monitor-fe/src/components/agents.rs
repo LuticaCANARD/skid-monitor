@@ -37,6 +37,7 @@ pub(crate) enum AgentOverviewAction {
         node: String,
         service: String,
     },
+    Remove(String),
 }
 
 pub(crate) fn show(
@@ -205,9 +206,14 @@ fn agent_table(
                         ui.label(RichText::new(signal_count(row).to_string()).strong());
                         ui.label(RichText::new(shorten(&last_signal(row), 34)).monospace());
                         ui.label(RichText::new(age(row)).monospace());
-                        if ui.button("Open").clicked() {
-                            *action = Some(AgentOverviewAction::Select(key));
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("Open").clicked() {
+                                *action = Some(AgentOverviewAction::Select(key.clone()));
+                            }
+                            if ui.button("Remove").clicked() {
+                                *action = Some(AgentOverviewAction::Remove(key.clone()));
+                            }
+                        });
                         ui.end_row();
                     }
                 });

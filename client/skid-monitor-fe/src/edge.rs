@@ -111,6 +111,10 @@ impl EdgeSignalDecorations {
         Some(decoration.to_persisted())
     }
 
+    pub(crate) fn remove(&mut self, key: &str) -> bool {
+        self.rows.remove(key).is_some()
+    }
+
     pub(crate) fn clear_severities(&mut self) -> Vec<PersistedEdgeState> {
         let mut cleared = Vec::new();
         for decoration in self.rows.values_mut() {

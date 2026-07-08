@@ -1,8 +1,11 @@
 use super::*;
-use crate::receiver_loop::{ReceiverMessage, spawn_receiver_on_without_extension};
+use crate::receiver_loop::{
+    ReceiverControl, ReceiverMessage, spawn_receiver_managed_on_without_extension,
+    spawn_receiver_on_without_extension,
+};
 use skid_protocol::metrics::{Metric, MetricKind, Source, export_metrics};
-use std::net::TcpStream;
-use std::time::Duration;
+use std::net::{TcpListener, TcpStream};
+use std::time::{Duration, Instant};
 
 fn sample_signal(name: &str, value: f64) -> Signal {
     Signal::Metrics(export_metrics(
@@ -97,5 +100,38 @@ fn receiver_loop_accepts_signals_on_multiple_listeners() {
             ReceiverMessage::ExtensionError(error) => panic!("unexpected extension error: {error}"),
             ReceiverMessage::Signal { .. } => panic!("unexpected signal kind"),
         }
+    }
+}
+
+#[test]
+fn remove_listener_frees_the_bound_port() {
+    let (rx, ctrl_tx) =
+        spawn_receiver_managed_on_without_extension(vec!["127.0.0.1:0".to_string()]);
+
+    let addr = match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
+        ReceiverMessage::Listening(addrs) => addrs.into_iter().next().unwrap(),
+        other => panic!("expected Listening, got a different message: {}", match other {
+            ReceiverMessage::Error { error, .. } => error,
+            ReceiverMessage::ExtensionError(error) => error,
+            _ => "signal".to_string(),
+        }),
+    };
+
+    ctrl_tx
+        .send(ReceiverControl::RemoveListener(addr.clone()))
+        .unwrap();
+
+    // The receiver loop only notices `stop` after a wakeup connect unblocks
+    // its pending `accept()`; poll until the OS actually lets us rebind the
+    // freed port instead of asserting on a fixed sleep.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if TcpListener::bind(&addr).is_ok() {
+            break;
+        }
+        if Instant::now() > deadline {
+            panic!("listener on {addr} was not released after RemoveListener");
+        }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }

@@ -55,6 +55,10 @@ impl StateStorage {
         let _ = self.tx.send(StorageCommand::UpsertEdge(edge.clone()));
     }
 
+    pub(crate) fn delete_edge(&self, key: &str) {
+        let _ = self.tx.send(StorageCommand::DeleteEdge(key.to_string()));
+    }
+
     pub(crate) fn persist_alert(&self, change: &AlertChange) {
         let _ = self
             .tx
@@ -64,6 +68,7 @@ impl StateStorage {
 
 enum StorageCommand {
     UpsertEdge(PersistedEdgeState),
+    DeleteEdge(String),
     RecordAlert(AlertRecord),
 }
 

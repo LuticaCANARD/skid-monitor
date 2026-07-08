@@ -124,6 +124,30 @@ impl DashboardState {
         Ok(key)
     }
 
+    pub(crate) fn remove_agent(&mut self, key: &str) -> Result<(), String> {
+        let Some(node) = self.nodes.remove(key) else {
+            return Err("agent not found".to_string());
+        };
+
+        self.edge_decorations.remove(key);
+        self.forget_edge(key);
+        self.push_event(
+            "agent",
+            format!("removed observation agent {} at {}", node.node, node.endpoint),
+        );
+
+        // Mirror `register_agent`'s auto-bind: if this endpoint was a
+        // bindable socket address, ask the receiver loop to stop and unbind
+        // it too, so removing an agent actually frees the port.
+        if node.endpoint.parse::<std::net::SocketAddr>().is_ok()
+            && let Some(listener_ctrl) = &self.listener_ctrl
+        {
+            let _ = listener_ctrl.send(ReceiverControl::RemoveListener(node.endpoint.clone()));
+        }
+
+        Ok(())
+    }
+
     fn observe_listening(&mut self, addrs: Vec<String>) {
         let label = listener_status_label(&addrs);
         self.listening_label = Some(label.clone());

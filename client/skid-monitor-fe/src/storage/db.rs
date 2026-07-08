@@ -205,6 +205,15 @@ pub(super) async fn upsert_edge_state(
     Ok(())
 }
 
+pub(super) async fn delete_edge_state(pool: &SqlitePool, key: &str) -> sqlx::Result<()> {
+    sqlx::query("DELETE FROM edge_state WHERE key = ?1")
+        .bind(key)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 pub(super) async fn record_alert(pool: &SqlitePool, alert: &AlertRecord) -> sqlx::Result<()> {
     sqlx::query(
         r#"
