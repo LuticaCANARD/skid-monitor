@@ -5,6 +5,12 @@ use std::{
     fs,path
 };
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SshfsClientState {
+    Unmounted,
+    Mounted,
+    Error(String),
+}
 
 pub struct SshfsOption<'a> {
     sshfs_path: &'a str,
@@ -17,13 +23,12 @@ pub struct SshfsOption<'a> {
 pub struct SshfsClient<'a> {
     sshfs_option: SshfsOption<'a>,
     sshfs_process: Option<process::Child>,
+    state: Arc<Mutex<SshfsClientState>>,
 }
 
 impl<'a> Drop for SshfsClient<'a> {
     fn drop(&mut self) {
-        if let Some(mut process) = self.sshfs_process.take() {
-            let _ = process.kill();
-        }
+        let _ = self.unmount();
     }
 }
 
@@ -32,10 +37,15 @@ impl<'a> SshfsClient<'a> {
         Self {
             sshfs_option,
             sshfs_process: None,
+            state: Arc::new(Mutex::new(SshfsClientState::Unmounted)),
         }
     }
 
     pub fn mount(&mut self) -> Result<(), String> {
+        if self.sshfs_process.is_some() {
+            return Err("sshfs is already mounted".to_string());
+        }
+
         let SshfsOption {
             sshfs_path,
             mount_path,
@@ -47,21 +57,38 @@ impl<'a> SshfsClient<'a> {
         match sshfs_open(sshfs_path, mount_path, sshfs_user, sshfs_host, *sshfs_port) {
             Ok(child) => {
                 self.sshfs_process = Some(child);
+                *self.state.lock().unwrap() = SshfsClientState::Mounted;
                 Ok(())
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                *self.state.lock().unwrap() = SshfsClientState::Error(e.clone());
+                Err(e)
+            }
         }
     }
 
     pub fn unmount(&mut self) -> Result<(), String> {
-        if let Some(mut process) = self.sshfs_process.take() {
-            match process.kill() {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("Failed to kill sshfs process: {}", e)),
-            }
-        } else {
-            Err("No sshfs process to unmount".to_string())
-        }
+        let mut process = match self.sshfs_process.take() {
+            Some(process) => process,
+            None => return Err("No sshfs process to unmount".to_string()),
+        };
+
+        // 프로세스만 kill하면 FUSE 마운트가 "Transport endpoint is not
+        // connected" 상태로 남을 수 있어 fusermount로 먼저 언마운트한다.
+        let _ = process::Command::new("fusermount")
+            .arg("-u")
+            .arg(self.sshfs_option.mount_path)
+            .status();
+
+        let _ = process.kill();
+        let _ = process.wait(); // 좀비 프로세스 방지를 위해 반드시 회수
+
+        *self.state.lock().unwrap() = SshfsClientState::Unmounted;
+        Ok(())
+    }
+
+    pub fn get_state(&self) -> SshfsClientState {
+        self.state.lock().unwrap().clone()
     }
 }
 
@@ -75,17 +102,14 @@ pub fn sshfs_open(
     sshfs_host: &str,
     sshfs_port: u16,
 ) -> Result<process::Child, String> {
-    let sshfs_command = format!(
-        "sshfs -o allow_other,default_permissions,port={} {}@{}:{} {}",
-        sshfs_port, sshfs_user, sshfs_host, sshfs_path, mount_path
-    );
-
-    match process::Command::new("sh")
-        .arg("-c")
-        .arg(sshfs_command)
+    process::Command::new("sshfs")
+        .arg("-o")
+        .arg(format!(
+            "allow_other,default_permissions,port={}",
+            sshfs_port
+        ))
+        .arg(format!("{}@{}:{}", sshfs_user, sshfs_host, sshfs_path))
+        .arg(mount_path)
         .spawn()
-    {
-        Ok(child) => Ok(child),
-        Err(e) => Err(format!("Failed to execute sshfs command: {}", e)),
-    }
+        .map_err(|e| format!("Failed to execute sshfs command: {}", e))
 }
