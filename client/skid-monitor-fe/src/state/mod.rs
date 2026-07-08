@@ -8,7 +8,9 @@ use crate::alert::AlertStore;
 use crate::edge::EdgeSignalDecorations;
 use crate::model::{EventRow, MetricSample, NodeSummary, SignalCounters, Status};
 use crate::storage::StateStorage;
+use skid_monitor_client::receiver_loop::ReceiverControl;
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::mpsc::Sender;
 
 pub(crate) struct DashboardState {
     pub(in crate::state) status: Status,
@@ -22,4 +24,7 @@ pub(crate) struct DashboardState {
     pub(in crate::state) alerts: AlertStore,
     pub(in crate::state) alerts_enabled: bool,
     pub(in crate::state) storage: Option<StateStorage>,
+    /// Lets the dashboard ask the running receiver loop to bind an
+    /// additional listen address at runtime (see `register_agent`).
+    pub(in crate::state) listener_ctrl: Option<Sender<ReceiverControl>>,
 }

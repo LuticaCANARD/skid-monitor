@@ -96,7 +96,12 @@ pub fn init() -> TelemetryGuard {
             .add_directive("hyper=off".parse().unwrap())
             .add_directive("tonic=off".parse().unwrap())
             .add_directive("h2=off".parse().unwrap())
-            .add_directive("reqwest=off".parse().unwrap()),
+            .add_directive("reqwest=off".parse().unwrap())
+            // transport/exporters는 client 미연결 시 전송할 signal 전체를 info!로 덤프한다.
+            // 이 로그가 다시 OTel 로그로 잡혀 다음 주기에 수집·재전송되면 payload가 주기마다
+            // 중첩 직렬화되어 기하급수적으로 불어나는 피드백 루프가 생기므로 여기서 끊는다.
+            .add_directive("skid_monitor_agent::transport=off".parse().unwrap())
+            .add_directive("skid_monitor_agent::exporters=off".parse().unwrap()),
     );
 
     // --- subscriber: 콘솔(fmt) + span 브리지 + log 브리지 ---

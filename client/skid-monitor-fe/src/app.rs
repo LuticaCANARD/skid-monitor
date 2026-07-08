@@ -2,7 +2,7 @@ use crate::config;
 use crate::state::DashboardState;
 use crate::view::{ControlRoomUiState, ControlRoomView};
 use eframe::egui;
-use skid_monitor_client::receiver_loop::{ReceiverMessage, spawn_receiver_with_notify};
+use skid_monitor_client::receiver_loop::{ReceiverMessage, spawn_receiver_managed_with_notify};
 use std::sync::mpsc::Receiver;
 
 pub(crate) struct ControlRoomApp {
@@ -20,10 +20,14 @@ impl ControlRoomApp {
         });
 
         let ctx = cc.egui_ctx.clone();
+        let (rx, listener_ctrl) = spawn_receiver_managed_with_notify(move || ctx.request_repaint());
+
+        let mut state = DashboardState::new();
+        state.set_listener_control(listener_ctrl);
 
         Self {
-            rx: spawn_receiver_with_notify(move || ctx.request_repaint()),
-            state: DashboardState::new(),
+            rx,
+            state,
             ui: ui_state,
         }
     }

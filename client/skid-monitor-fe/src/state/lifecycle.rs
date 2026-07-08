@@ -3,10 +3,10 @@ use crate::alert::AlertStore;
 use crate::edge::{EdgeSignalDecorations, edge_key};
 use crate::model::{NodeSummary, SignalCounters, Status};
 use crate::storage::StateStorage;
-use skid_monitor_client::receiver_loop::ReceiverMessage;
+use skid_monitor_client::receiver_loop::{ReceiverControl, ReceiverMessage};
 use skid_protocol::protocol::Signal;
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
 use std::time::Instant;
 
 impl DashboardState {
@@ -31,6 +31,7 @@ impl DashboardState {
             alerts: AlertStore::default(),
             alerts_enabled: true,
             storage: storage_init.storage,
+            listener_ctrl: None,
         };
 
         if let Some(message) = storage_init.message {
@@ -38,6 +39,12 @@ impl DashboardState {
         }
 
         state
+    }
+
+    /// Wires up the channel used to ask the running receiver loop to bind an
+    /// additional listen address at runtime (see `register_agent`).
+    pub(crate) fn set_listener_control(&mut self, listener_ctrl: Sender<ReceiverControl>) {
+        self.listener_ctrl = Some(listener_ctrl);
     }
 
     pub(crate) fn drain_messages(&mut self, rx: &Receiver<ReceiverMessage>) {
@@ -104,6 +111,15 @@ impl DashboardState {
             "agent",
             format!("registered observation agent {node} at {endpoint}"),
         );
+
+        // If the endpoint looks like a bindable socket address, ask the
+        // running receiver loop to also listen on it, so a new agent can be
+        // wired up from the FE without restarting the client process.
+        if endpoint.parse::<std::net::SocketAddr>().is_ok()
+            && let Some(listener_ctrl) = &self.listener_ctrl
+        {
+            let _ = listener_ctrl.send(ReceiverControl::AddListener(endpoint.to_string()));
+        }
 
         Ok(key)
     }

@@ -27,6 +27,14 @@ pub enum ReceiverMessage {
     ExtensionError(String),
 }
 
+/// Requests a caller can send back into a running receiver loop.
+pub enum ReceiverControl {
+    /// Bind an additional listen address at runtime, without restarting the
+    /// process. Success/failure is reported back over the existing
+    /// `ReceiverMessage` channel (`Listening`/`Error`), same as startup binds.
+    AddListener(String),
+}
+
 /// Starts the shared receiver loop on a background thread.
 ///
 /// The loop binds the configured client address list, receives one length-prefixed
@@ -40,6 +48,16 @@ pub fn spawn_receiver() -> Receiver<ReceiverMessage> {
 pub fn spawn_receiver_with_notify(
     notify: impl Fn() + Send + Sync + 'static,
 ) -> Receiver<ReceiverMessage> {
+    spawn_receiver_configured(listen_addrs(), true, Some(Arc::new(notify))).0
+}
+
+/// Like [`spawn_receiver_with_notify`], but also returns a control channel
+/// that lets callers ask the running loop to bind an additional listen
+/// address at runtime (e.g. from a UI "add agent" action), without
+/// restarting the process.
+pub fn spawn_receiver_managed_with_notify(
+    notify: impl Fn() + Send + Sync + 'static,
+) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
     spawn_receiver_configured(listen_addrs(), true, Some(Arc::new(notify)))
 }
 
@@ -48,20 +66,22 @@ pub fn spawn_receiver_with_notify(
 /// This is useful for tests and for clients that have already resolved their
 /// own configuration. Production callers normally use [`spawn_receiver`].
 pub fn spawn_receiver_on(addrs: Vec<String>) -> Receiver<ReceiverMessage> {
-    spawn_receiver_configured(addrs, true, None)
+    spawn_receiver_configured(addrs, true, None).0
 }
 
 #[cfg(test)]
 pub(crate) fn spawn_receiver_on_without_extension(addrs: Vec<String>) -> Receiver<ReceiverMessage> {
-    spawn_receiver_configured(addrs, false, None)
+    spawn_receiver_configured(addrs, false, None).0
 }
 
 fn spawn_receiver_configured(
     addrs: Vec<String>,
     start_extension: bool,
     notify: Option<NotifyReceiverUpdate>,
-) -> Receiver<ReceiverMessage> {
+) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
     let (tx, rx) = mpsc::channel();
+    let (ctrl_tx, ctrl_rx) = mpsc::channel::<ReceiverControl>();
+
     thread::spawn(move || {
         let mut receivers = Vec::new();
         for configured_addr in addrs {
@@ -95,19 +115,6 @@ fn spawn_receiver_configured(
                     error: "failed to bind any configured client listener".to_string(),
                 },
             );
-            return;
-        }
-
-        let active_addrs = receivers
-            .iter()
-            .map(|(addr, _)| addr.clone())
-            .collect::<Vec<_>>();
-        if !send_message(
-            &tx,
-            notify.as_ref(),
-            ReceiverMessage::Listening(active_addrs),
-        ) {
-            return;
         }
 
         let extension = if start_extension {
@@ -129,14 +136,65 @@ fn spawn_receiver_configured(
         };
         let extension = Arc::new(Mutex::new(extension));
 
-        for (addr, receiver) in receivers {
-            let tx = tx.clone();
-            let extension = Arc::clone(&extension);
-            let notify = notify.clone();
-            thread::spawn(move || receive_forever(addr, receiver, tx, extension, notify));
+        if !receivers.is_empty() {
+            let active_addrs = receivers
+                .iter()
+                .map(|(addr, _)| addr.clone())
+                .collect::<Vec<_>>();
+            if !send_message(
+                &tx,
+                notify.as_ref(),
+                ReceiverMessage::Listening(active_addrs),
+            ) {
+                return;
+            }
+
+            for (addr, receiver) in receivers {
+                let tx = tx.clone();
+                let extension = Arc::clone(&extension);
+                let notify = notify.clone();
+                thread::spawn(move || receive_forever(addr, receiver, tx, extension, notify));
+            }
+        }
+
+        // Stay alive after the initial batch so runtime "add listener"
+        // requests can bind more sockets without restarting the process.
+        while let Ok(ReceiverControl::AddListener(addr)) = ctrl_rx.recv() {
+            match SignalReceiver::bind(&addr) {
+                Ok(receiver) => {
+                    let listen_addr = receiver
+                        .local_addr()
+                        .map(|resolved| resolved.to_string())
+                        .unwrap_or_else(|_| addr.clone());
+                    if !send_message(
+                        &tx,
+                        notify.as_ref(),
+                        ReceiverMessage::Listening(vec![listen_addr.clone()]),
+                    ) {
+                        break;
+                    }
+                    let tx = tx.clone();
+                    let extension = Arc::clone(&extension);
+                    let notify = notify.clone();
+                    thread::spawn(move || {
+                        receive_forever(listen_addr, receiver, tx, extension, notify)
+                    });
+                }
+                Err(err) => {
+                    send_message(
+                        &tx,
+                        notify.as_ref(),
+                        ReceiverMessage::Error {
+                            listener: Some(addr.clone()),
+                            error: format!("failed to bind {addr}: {err}"),
+                        },
+                    );
+                }
+            }
         }
     });
-    rx
+
+    (rx, ctrl_tx)
 }
 
 fn receive_forever(
