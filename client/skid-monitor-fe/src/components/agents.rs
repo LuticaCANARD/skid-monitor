@@ -371,9 +371,10 @@ fn agent_table(
         .max_width(panel_width)
         .max_height(max_height)
         .show(ui, |ui| {
-            ui.set_min_width(table_width);
+            ui.set_width(table_width);
             egui::Grid::new("agents-grid")
                 .striped(true)
+                .num_columns(10)
                 .min_col_width(if compact { 56.0 } else { 72.0 })
                 .min_row_height(ui.spacing().interact_size.y)
                 .show(ui, |ui| {
@@ -386,6 +387,7 @@ fn agent_table(
                     table_header(ui, "last");
                     table_header(ui, "age");
                     table_header(ui, "");
+                    row_fill(ui);
                     ui.end_row();
 
                     for (key, row) in rows {
@@ -400,10 +402,18 @@ fn agent_table(
                         ui.label(RichText::new(shorten(&last_signal(row), 34)).monospace());
                         ui.label(RichText::new(age(row)).monospace());
                         row_actions(ui, key, pending_remove_key, action);
+                        row_fill(ui);
                         ui.end_row();
                     }
                 });
         });
+}
+
+fn row_fill(ui: &mut egui::Ui) {
+    ui.allocate_space(egui::Vec2::new(
+        ui.available_width(),
+        ui.spacing().interact_size.y,
+    ));
 }
 
 fn row_actions(
@@ -413,59 +423,65 @@ fn row_actions(
     action: &mut Option<AgentOverviewAction>,
 ) {
     let button_height = ui.spacing().interact_size.y;
-    let action_width = config::AGENT_CONFIRM_BUTTON_WIDTH
-        + config::AGENT_ACTION_BUTTON_WIDTH
-        + ui.spacing().item_spacing.x;
+    let gap = ui.spacing().item_spacing.x;
+    let action_width = config::AGENT_CONFIRM_BUTTON_WIDTH + config::AGENT_ACTION_BUTTON_WIDTH + gap;
+    let (_, action_rect) = ui.allocate_space(egui::Vec2::new(action_width, button_height));
+    let mut action_ui = ui.new_child(egui::UiBuilder::new().max_rect(action_rect));
+    let button_top = action_rect.center().y - button_height * 0.5;
+    let mut button_left = action_rect.left();
 
-    ui.allocate_ui_with_layout(
-        egui::Vec2::new(action_width, button_height),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            if pending_remove_key == Some(key) {
-                let confirm = egui::Button::new(
-                    RichText::new("Confirm")
-                        .strong()
-                        .color(config::STATUS_ERROR_COLOR),
-                );
-                if ui
-                    .add_sized([config::AGENT_CONFIRM_BUTTON_WIDTH, button_height], confirm)
-                    .clicked()
-                {
-                    *action = Some(AgentOverviewAction::ConfirmRemove(key.to_string()));
-                }
-                if ui
-                    .add_sized(
-                        [config::AGENT_ACTION_BUTTON_WIDTH, button_height],
-                        egui::Button::new("Cancel"),
-                    )
-                    .clicked()
-                {
-                    *action = Some(AgentOverviewAction::CancelRemove);
-                }
-            } else {
-                if ui
-                    .add_sized(
-                        [config::AGENT_ACTION_BUTTON_WIDTH, button_height],
-                        egui::Button::new("Open"),
-                    )
-                    .clicked()
-                {
-                    *action = Some(AgentOverviewAction::Select(key.to_string()));
-                }
-                if ui
-                    .add_sized(
-                        [config::AGENT_ACTION_BUTTON_WIDTH, button_height],
-                        egui::Button::new(
-                            RichText::new("Remove").color(config::STATUS_ERROR_COLOR),
-                        ),
-                    )
-                    .clicked()
-                {
-                    *action = Some(AgentOverviewAction::RequestRemove(key.to_string()));
-                }
-            }
-        },
-    );
+    if pending_remove_key == Some(key) {
+        let confirm = egui::Button::new(
+            RichText::new("Confirm")
+                .strong()
+                .color(config::STATUS_ERROR_COLOR),
+        );
+        let confirm_rect = egui::Rect::from_min_size(
+            egui::Pos2::new(button_left, button_top),
+            egui::Vec2::new(config::AGENT_CONFIRM_BUTTON_WIDTH, button_height),
+        );
+        if action_ui.put(confirm_rect, confirm).clicked() {
+            *action = Some(AgentOverviewAction::ConfirmRemove(key.to_string()));
+        }
+
+        button_left += config::AGENT_CONFIRM_BUTTON_WIDTH + gap;
+        let cancel_rect = egui::Rect::from_min_size(
+            egui::Pos2::new(button_left, button_top),
+            egui::Vec2::new(config::AGENT_ACTION_BUTTON_WIDTH, button_height),
+        );
+        if action_ui
+            .put(cancel_rect, egui::Button::new("Cancel"))
+            .clicked()
+        {
+            *action = Some(AgentOverviewAction::CancelRemove);
+        }
+    } else {
+        let open_rect = egui::Rect::from_min_size(
+            egui::Pos2::new(button_left, button_top),
+            egui::Vec2::new(config::AGENT_ACTION_BUTTON_WIDTH, button_height),
+        );
+        if action_ui
+            .put(open_rect, egui::Button::new("Open"))
+            .clicked()
+        {
+            *action = Some(AgentOverviewAction::Select(key.to_string()));
+        }
+
+        button_left += config::AGENT_ACTION_BUTTON_WIDTH + gap;
+        let remove_rect = egui::Rect::from_min_size(
+            egui::Pos2::new(button_left, button_top),
+            egui::Vec2::new(config::AGENT_ACTION_BUTTON_WIDTH, button_height),
+        );
+        if action_ui
+            .put(
+                remove_rect,
+                egui::Button::new(RichText::new("Remove").color(config::STATUS_ERROR_COLOR)),
+            )
+            .clicked()
+        {
+            *action = Some(AgentOverviewAction::RequestRemove(key.to_string()));
+        }
+    }
 }
 
 fn recent_rows<'a>(
