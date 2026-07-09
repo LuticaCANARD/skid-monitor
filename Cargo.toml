@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "skid-protocol",
+    "skid-edge-wire",
     "skid-monitor-agent",
     "client/skid-monitor-client",
     "client/skid-monitor-fe",
@@ -17,6 +18,7 @@ edition = "2024"
 [workspace.dependencies]
 # 공유 라이브러리: client/server/edge agent가 동일한 프로토콜·타입을 사용한다
 skid-protocol = { path = "skid-protocol" }
+skid-edge-wire = { path = "skid-edge-wire" }
 skid-monitor-client = { path = "client/skid-monitor-client" }
 
 # 신호 타입 직렬화: agent와 client는 TCP 경계로 나뉠 수 있으므로 protocol 타입은 직렬화 가능해야 한다

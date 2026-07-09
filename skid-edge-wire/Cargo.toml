@@ -1,0 +1,8 @@
+[package]
+name = "skid-edge-wire"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "skid_edge_wire"
+path = "src/lib.rs"

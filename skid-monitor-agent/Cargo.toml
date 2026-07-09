@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+skid-edge-wire.workspace = true
 skid-protocol.workspace = true
 
 # OpenTelemetry 자체 계측
