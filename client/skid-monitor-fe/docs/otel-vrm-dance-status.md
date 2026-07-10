@@ -4,7 +4,8 @@
 
 프론트엔드에 VRM/VTuber 캐릭터를 띄우고 OpenTelemetry 신호에 맞춰 춤추게 하는 것은 가능하다.
 다만 현재 repository의 실제 구현 수준은 "신호 수신과 외부 확장 전달 경로는 있음"이고,
-"VRM 렌더링, 댄스 애니메이션, 신호에서 댄스 상태를 만드는 로직"은 아직 구현 전이다.
+`high-spec` frontend에는 알람 severity에 반응하는 built-in placeholder character presenter와
+Metrics/Character 전환 UI가 구현되어 있다. 실제 VRM 모델 로딩과 댄스 애니메이션은 아직 구현 전이다.
 
 즉, 지금 바로 있는 것을 기준으로 보면 다음처럼 판단할 수 있다.
 
@@ -14,10 +15,10 @@
 | agent에서 client/frontend로 신호 전달 | 구현됨 | `Signal::{Metrics, Traces, Logs}`를 length-prefixed JSON TCP frame으로 보낸다. |
 | egui frontend의 신호 표시 | 구현됨 | `skid-monitor-fe`가 metrics/traces/logs를 받아 dashboard, counter, event log로 표시한다. |
 | high-spec 렌더러 선택 | 부분 구현 | `high-spec` feature가 `eframe::Renderer::Wgpu`를 선택한다. |
-| VRM presenter 설계 | 문서화됨 | RFC 0003에 VRM avatar presenter, severity mapping, fallback 정책이 있다. |
+| Character presenter | 부분 구현 | `high-spec`에서 built-in placeholder, severity mapping, Metrics/Character 전환이 동작한다. |
 | 알람 -> VRM 상태 설계 | 문서화됨 | RFC 0002/0004에 `AlertSnapshot`, short message, VRM presenter 전달이 정의되어 있다. |
-| 실제 VRM loader/renderer | 미구현 | `avatar`, `viewer3d`, `gltf`, `vrm`, `vrma` 런타임 코드/의존성이 없다. |
-| 신호 -> 댄스 상태 변환 | 미구현 | 현재 frontend는 counters/events/metrics만 갱신하고 avatar state machine은 없다. |
+| 실제 VRM loader/renderer | 미구현 | placeholder `avatar` presenter만 있으며 `gltf`, `vrm`, `vrma` loader/renderer 의존성은 없다. |
+| 알람 -> character 상태 변환 | 부분 구현 | 선택 Agent의 최고 severity를 Idle/Concerned/Urgent 상태로 매핑한다. 댄스 상태 변환은 미구현이다. |
 | Unity/VRM bridge 경로 | 부분 구현 | Rust client가 .NET extension host로 raw `Signal` JSON을 전달할 수 있다. |
 
 ## 현재 신호 흐름
@@ -75,7 +76,8 @@ RFC 0003은 이 경로를 기준으로 다음을 제안한다.
 - `.vrm`/`.glb` loader, humanoid bone mapping, expression mapping을 avatar module에 둔다.
 - VRM 실패가 dashboard나 alert 평가를 망가뜨리지 않게 분리한다.
 
-현재 코드에는 아직 `avatar` module, VRM/glTF loader, animation mixer, dance clip player가 없다.
+현재 코드에는 built-in placeholder를 그리는 `avatar` module은 있다. VRM/glTF loader, animation mixer,
+dance clip player는 아직 없다.
 따라서 이 경로는 설계는 있지만 구현은 시작 전이다.
 
 ### 2. .NET extension host를 Unity/VRM bridge로 쓰는 경로
@@ -209,6 +211,6 @@ import, expression, spring bone, Animator Controller를 이미 잘 처리하고,
 - 프론트엔드에서 VTuber/VRM 캐릭터가 나와 춤추는 것은 가능하다.
 - OpenTelemetry 신호가 frontend까지 도달하는 경로는 이미 구현되어 있다.
 - OpenTelemetry 신호를 외부 .NET extension으로 넘기는 경로도 일부 구현되어 있다.
-- 하지만 OpenTelemetry 신호를 VRM 상태/댄스 애니메이션으로 바꾸는 로직은 아직 없다.
+- 알람 severity를 built-in character 상태로 바꾸는 로직은 구현됐지만 VRM/댄스 상태 변환은 아직 없다.
 - 실제 VRM 렌더링/UniVRM/Three.js/wgpu avatar runtime도 아직 없다.
 - 가장 가까운 구현 경로는 `.NET extension -> Unity companion -> UniVRM` bridge다.

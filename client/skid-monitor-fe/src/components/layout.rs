@@ -152,6 +152,26 @@ pub(crate) fn section_gap(ui: &egui::Ui) -> f32 {
     config::SECTION_GAP + ui.spacing().item_spacing.y
 }
 
+pub(crate) fn vertical_resize_handle(ui: &mut egui::Ui, width: f32, height: f32) -> f32 {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::drag());
+    let response = response.on_hover_cursor(egui::CursorIcon::ResizeVertical);
+    let color = if response.hovered() || response.dragged() {
+        ui.visuals().widgets.hovered.fg_stroke.color
+    } else {
+        ui.visuals().widgets.noninteractive.bg_stroke.color
+    };
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        egui::Stroke::new(config::RESIZE_HANDLE_STROKE, color),
+    );
+    if response.dragged() {
+        ui.input(|input| input.pointer.delta().y)
+    } else {
+        0.0
+    }
+}
+
 pub(crate) fn panel_body_height(panel_height: f32) -> f32 {
     (panel_height - config::PANEL_HEADER_HEIGHT).max(1.0)
 }

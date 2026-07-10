@@ -164,31 +164,58 @@ pub(crate) fn show(
     state: &DashboardState,
     page: &mut OverviewState,
 ) -> Option<OverviewAction> {
+    let gap = crate::components::layout::section_gap(ui);
+    let main_min = config::AGENTS_PANEL_HEIGHT_MIN;
+    let event_min = config::EVENT_LOG_HEIGHT_MIN;
+    let available = (limits.main_height + limits.event_log_height).max(main_min + event_min);
+    let flex_id = ui.make_persistent_id("overview-agents-event-flex");
+    let mut flex = ui.ctx().data_mut(|data| {
+        data.get_temp::<[f32; 2]>(flex_id).unwrap_or([
+            limits.main_height.max(main_min),
+            limits.event_log_height.max(event_min),
+        ])
+    });
+    let total = flex[0] + flex[1];
+    let mut agents_height =
+        (available * flex[0] / total.max(f32::EPSILON)).clamp(main_min, available - event_min);
+    let mut event_height = available - agents_height;
     let notice = page.add_agent_notice.as_ref().map(|notice| AgentNotice {
         message: notice.message.as_str(),
         is_error: notice.is_error,
     });
-    let action = agents::show(
-        ui,
-        compact,
-        state.nodes(),
-        state.listeners(),
-        state.edge_decorations(),
-        &mut page.add_agent_draft,
-        &mut page.listener_draft,
-        &mut page.agent_filter,
-        page.add_agent_open,
-        page.pending_remove_key.as_deref(),
-        page.pending_remove_listener.as_deref(),
-        notice,
-        panel_width,
-        limits.main_height,
-    )
-    .map(OverviewAction::from);
-
-    ui.add_space(config::SECTION_GAP);
     let events = state.events().iter().collect::<Vec<_>>();
-    event_log::show(ui, panel_width, limits.event_log_height, &events);
+    let mut action = None;
+
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        action = agents::show(
+            ui,
+            compact,
+            state.nodes(),
+            state.listeners(),
+            state.edge_decorations(),
+            &mut page.add_agent_draft,
+            &mut page.listener_draft,
+            &mut page.agent_filter,
+            page.add_agent_open,
+            page.pending_remove_key.as_deref(),
+            page.pending_remove_listener.as_deref(),
+            notice,
+            panel_width,
+            agents_height,
+        )
+        .map(OverviewAction::from);
+
+        let delta = crate::components::layout::vertical_resize_handle(ui, panel_width, gap);
+        event_log::show(ui, panel_width, event_height, &events);
+
+        if delta != 0.0 {
+            agents_height = (agents_height + delta).clamp(main_min, available - event_min);
+            event_height = available - agents_height;
+            flex = [agents_height, event_height];
+        }
+    });
+    ui.ctx().data_mut(|data| data.insert_temp(flex_id, flex));
 
     action
 }

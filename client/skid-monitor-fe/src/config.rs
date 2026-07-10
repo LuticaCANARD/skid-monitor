@@ -90,6 +90,7 @@ pub(crate) const TRENDS_WIDE_VISIBLE_COUNT: usize = 6;
 pub(crate) const TRENDS_COMPACT_NAME_CHARS: usize = 32;
 pub(crate) const TRENDS_WIDE_NAME_CHARS: usize = 44;
 pub(crate) const TRENDS_ITEM_GAP: f32 = 6.0;
+pub(crate) const TRENDS_PANEL_HEIGHT_MIN: f32 = 108.0;
 pub(crate) const MIN_TREND_HISTORY_POINTS: usize = 2;
 
 pub(crate) const SPARKLINE_HEIGHT_MIN: f32 = 36.0;
@@ -123,6 +124,7 @@ pub(crate) const METRICS_COMPACT_ROW_EVEN: Color32 = Color32::from_rgb(18, 22, 2
 pub(crate) const METRICS_COMPACT_ROW_ODD: Color32 = Color32::from_rgb(14, 17, 23);
 
 pub(crate) const EVENT_LOG_HEIGHT_MIN: f32 = 120.0;
+pub(crate) const AGENTS_PANEL_HEIGHT_MIN: f32 = 180.0;
 
 pub(crate) const ALERT_CPU_USAGE_WARNING_THRESHOLD: f64 = 90.0;
 pub(crate) const ALERT_MEMORY_USAGE_WARNING_THRESHOLD: f64 = 90.0;
@@ -205,3 +207,5 @@ pub(crate) const METRIC_TREND_ATTR_COUNT: usize = 3;
 pub(crate) const METRIC_BYTE_UNIT: &str = "By";
 pub(crate) const BYTE_UNIT_BASE: f64 = 1024.0;
 pub(crate) const BYTE_DISPLAY_UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+
+pub(crate) const RESIZE_HANDLE_STROKE: f32 = 2.0;

@@ -17,6 +17,7 @@ pub(crate) struct ControlRoomUiState {
     selected_node_key: Option<String>,
     overview: OverviewState,
     settings_open: bool,
+    show_avatar: bool,
     settings: UiSettings,
 }
 
@@ -29,6 +30,7 @@ impl ControlRoomUiState {
             selected_node_key: None,
             overview: OverviewState::default(),
             settings_open: false,
+            show_avatar: false,
             settings,
         }
     }
@@ -51,66 +53,72 @@ impl<'a> ControlRoomView<'a> {
         egui::Frame::default()
             .inner_margin(egui::Margin::same(config::CONTENT_FRAME_MARGIN))
             .show(ui, |ui| {
-                let content = ContentLayout::for_viewport(ui.clip_rect().size());
+                egui::ScrollArea::vertical()
+                    .id_salt("control-room-page-scroll")
+                    .auto_shrink([false, false])
+                    .show_viewport(ui, |ui, _viewport| {
+                        let content = ContentLayout::for_viewport(ui.clip_rect().size());
 
-                centered_content(ui, content, |ui| {
-                    let panel_width = ui.available_width();
-                    let layout = LayoutMode::for_width(panel_width);
-                    let compact = layout.is_compact();
+                        centered_content(ui, content, |ui| {
+                            let panel_width = ui.available_width();
+                            let layout = LayoutMode::for_width(panel_width);
+                            let compact = layout.is_compact();
 
-                    if header::show(
-                        ui,
-                        compact,
-                        self.state.status(),
-                        self.state.alert_summary(),
-                        self.state.operational_summary(),
-                    ) {
-                        self.ui_state.settings_open = true;
-                    }
-                    ui.add_space(config::HEADER_COUNTER_GAP);
-                    counters::show(ui, self.state.counters());
-                    ui.add_space(config::SECTION_GAP);
-
-                    let selected_key = self.current_selected_key();
-                    if self.ui_state.selected_node_key != selected_key {
-                        self.ui_state.selected_node_key = selected_key.clone();
-                    }
-
-                    let limits = PanelLimits::for_remaining_height(
-                        remaining_height(ui, content),
-                        layout,
-                        section_gap(ui),
-                    );
-                    if let Some(key) = selected_key.as_deref() {
-                        if matches!(
-                            detail::show(
+                            if header::show(
                                 ui,
                                 compact,
-                                panel_width,
+                                self.state.status(),
+                                self.state.alert_summary(),
+                                self.state.operational_summary(),
+                            ) {
+                                self.ui_state.settings_open = true;
+                            }
+                            ui.add_space(config::HEADER_COUNTER_GAP);
+                            counters::show(ui, self.state.counters());
+                            ui.add_space(config::SECTION_GAP);
+
+                            let selected_key = self.current_selected_key();
+                            if self.ui_state.selected_node_key != selected_key {
+                                self.ui_state.selected_node_key = selected_key.clone();
+                            }
+
+                            let limits = PanelLimits::for_remaining_height(
+                                remaining_height(ui, content),
                                 layout,
-                                limits,
-                                self.state,
-                                key,
-                            ),
-                            Some(detail::DetailAction::BackToOverview)
-                        ) {
-                            self.ui_state.selected_node_key = None;
-                        }
-                    } else {
-                        let action = overview::show(
-                            ui,
-                            compact,
-                            panel_width,
-                            limits,
-                            self.state,
-                            &mut self.ui_state.overview,
-                        );
-                        if let Some(action) = action {
-                            self.handle_overview_action(action);
-                        }
-                    }
-                    ui.add_space(content.bottom_margin);
-                });
+                                section_gap(ui),
+                            );
+                            if let Some(key) = selected_key.as_deref() {
+                                if matches!(
+                                    detail::show(
+                                        ui,
+                                        compact,
+                                        panel_width,
+                                        layout,
+                                        limits,
+                                        self.state,
+                                        key,
+                                        &mut self.ui_state.show_avatar,
+                                    ),
+                                    Some(detail::DetailAction::BackToOverview)
+                                ) {
+                                    self.ui_state.selected_node_key = None;
+                                }
+                            } else {
+                                let action = overview::show(
+                                    ui,
+                                    compact,
+                                    panel_width,
+                                    limits,
+                                    self.state,
+                                    &mut self.ui_state.overview,
+                                );
+                                if let Some(action) = action {
+                                    self.handle_overview_action(action);
+                                }
+                            }
+                            ui.add_space(content.bottom_margin);
+                        });
+                    });
             });
 
         if self.ui_state.settings_open {

@@ -29,26 +29,33 @@ pub(crate) fn show(ui: &mut egui::Ui, panel_width: f32, max_height: f32, events:
             .show(ui, |ui| {
                 for event in events.iter().copied() {
                     ui.horizontal(|ui| {
-                        ui.add_sized(
+                        left_aligned_cell(
+                            ui,
                             [config::EVENT_LOG_TIME_WIDTH, config::EVENT_LOG_ROW_HEIGHT],
                             egui::Label::new(
                                 RichText::new(&event.time)
                                     .monospace()
                                     .color(config::PLACEHOLDER_TEXT_COLOR),
-                            ),
+                            )
+                            .halign(egui::Align::Min),
                         );
-                        ui.add_sized(
+                        left_aligned_cell(
+                            ui,
                             [config::EVENT_LOG_KIND_WIDTH, config::EVENT_LOG_ROW_HEIGHT],
                             egui::Label::new(
                                 RichText::new(&event.kind)
                                     .monospace()
                                     .color(kind_color(&event.kind)),
-                            ),
+                            )
+                            .halign(egui::Align::Min),
                         );
                         let message = shorten(&event.message, event_message_chars(message_width));
-                        let response = ui.add_sized(
+                        let response = left_aligned_cell(
+                            ui,
                             [message_width, config::EVENT_LOG_ROW_HEIGHT],
-                            egui::Label::new(message.clone()).truncate(),
+                            egui::Label::new(message.clone())
+                                .truncate()
+                                .halign(egui::Align::Min),
                         );
                         if message != event.message {
                             response.on_hover_text(&event.message);
@@ -57,6 +64,19 @@ pub(crate) fn show(ui: &mut egui::Ui, panel_width: f32, max_height: f32, events:
                 }
             });
     });
+}
+
+fn left_aligned_cell(
+    ui: &mut egui::Ui,
+    size: impl Into<egui::Vec2>,
+    label: egui::Label,
+) -> egui::Response {
+    ui.allocate_ui_with_layout(
+        size.into(),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| ui.add(label),
+    )
+    .inner
 }
 
 fn event_message_chars(width: f32) -> usize {
