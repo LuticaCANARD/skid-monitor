@@ -1,3 +1,7 @@
+mod action;
+
+pub(crate) use action::DetailAction;
+
 use crate::components::{
     event_log,
     layout::{LayoutMode, PanelLimits},
@@ -8,10 +12,6 @@ use crate::edge::edge_key;
 use crate::model::{EventRow, MetricSample, NodeSummary};
 use crate::state::DashboardState;
 use eframe::egui::{self, RichText};
-
-pub(crate) enum DetailAction {
-    BackToOverview,
-}
 
 struct DetailPageData<'a> {
     panels: MainPanelData<'a>,

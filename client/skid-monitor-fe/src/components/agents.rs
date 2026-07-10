@@ -1,4 +1,8 @@
-use crate::components::layout::{panel_body_height, panel_frame};
+mod action;
+
+pub(crate) use action::AgentOverviewAction;
+
+use crate::components::layout::panel_frame;
 use crate::components::primitives::{alert_color, table_header};
 use crate::config;
 use crate::edge::{EdgeSignalDecoration, EdgeSignalDecorations, edge_key};
@@ -37,24 +41,6 @@ impl ListenerDraft {
 pub(crate) struct AgentNotice<'a> {
     pub(crate) message: &'a str,
     pub(crate) is_error: bool,
-}
-
-pub(crate) enum AgentOverviewAction {
-    Select(String),
-    StartAdd,
-    CancelAdd,
-    SaveAdd {
-        endpoint: String,
-        node: String,
-        service: String,
-    },
-    RequestRemove(String),
-    ConfirmRemove(String),
-    CancelRemove,
-    SaveListener(String),
-    RequestRemoveListener(String),
-    ConfirmRemoveListener(String),
-    CancelRemoveListener,
 }
 
 pub(crate) fn show(
@@ -134,7 +120,7 @@ pub(crate) fn show(
             decorations,
             pending_remove_key,
             inner_size.x,
-            panel_body_height(table_height),
+            table_height,
             &mut action,
         );
     });

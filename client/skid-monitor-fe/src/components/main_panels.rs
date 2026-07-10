@@ -1,3 +1,5 @@
+mod kind;
+
 use crate::alert::AlertStore;
 #[cfg(feature = "high-spec")]
 use crate::components::avatar;
@@ -10,6 +12,7 @@ use crate::config;
 use crate::edge::EdgeSignalDecorations;
 use crate::model::{MetricSample, NodeSummary};
 use eframe::egui;
+use kind::MainPanel;
 use std::collections::{BTreeMap, VecDeque};
 
 #[derive(Clone, Default)]
@@ -48,14 +51,6 @@ impl<'a> MainPanelData<'a> {
             show_avatar,
         }
     }
-}
-
-#[derive(Clone, Copy)]
-enum MainPanel {
-    Nodes,
-    Database,
-    Trends,
-    Metrics,
 }
 
 trait PanelTemplate {

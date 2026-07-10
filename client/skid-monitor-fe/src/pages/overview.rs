@@ -1,3 +1,7 @@
+mod action;
+
+pub(crate) use action::OverviewAction;
+
 use crate::components::{
     agents::{self, AddAgentDraft, AgentNotice, AgentOverviewAction, ListenerDraft},
     event_log,
@@ -20,24 +24,6 @@ pub(crate) struct OverviewState {
 struct AddAgentNotice {
     message: String,
     is_error: bool,
-}
-
-pub(crate) enum OverviewAction {
-    Select(String),
-    StartAdd,
-    CancelAdd,
-    SaveAdd {
-        endpoint: String,
-        node: String,
-        service: String,
-    },
-    RequestRemove(String),
-    ConfirmRemove(String),
-    CancelRemove,
-    SaveListener(String),
-    RequestRemoveListener(String),
-    ConfirmRemoveListener(String),
-    CancelRemoveListener,
 }
 
 impl Default for OverviewState {

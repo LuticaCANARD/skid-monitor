@@ -1,33 +1,10 @@
+mod state;
+
 use crate::alert::AlertStore;
 use crate::components::layout::{panel_body_height, panel_frame};
-use crate::config;
 use crate::model::{AlertSeverity, NodeSummary};
 use eframe::egui::{self, Align2, Color32, FontId, RichText, Stroke};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum AvatarAlertState {
-    Idle,
-    Concerned,
-    Urgent,
-}
-
-impl AvatarAlertState {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Idle => "Idle",
-            Self::Concerned => "Concerned",
-            Self::Urgent => "Urgent",
-        }
-    }
-
-    fn accent(self) -> Color32 {
-        match self {
-            Self::Idle => config::ALERT_CLEAR_COLOR,
-            Self::Concerned => config::ALERT_WARNING_COLOR,
-            Self::Urgent => config::ALERT_CRITICAL_COLOR,
-        }
-    }
-}
+use state::AvatarAlertState;
 
 pub(crate) struct AvatarPresenterInput {
     state: AvatarAlertState,

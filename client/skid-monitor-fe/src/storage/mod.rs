@@ -1,6 +1,9 @@
+mod command;
 mod db;
 mod path;
 mod worker;
+
+use command::StorageCommand;
 
 #[cfg(test)]
 mod tests;
@@ -64,12 +67,6 @@ impl StateStorage {
             .tx
             .send(StorageCommand::RecordAlert(AlertRecord::from(change)));
     }
-}
-
-enum StorageCommand {
-    UpsertEdge(PersistedEdgeState),
-    DeleteEdge(String),
-    RecordAlert(AlertRecord),
 }
 
 struct AlertRecord {
