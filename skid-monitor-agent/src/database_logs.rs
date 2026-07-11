@@ -6,7 +6,7 @@
 //! finite files and backfills.
 
 use crate::config::{DatabaseLogSourceConfig, DatabaseLogsReceiverConfig, LogStartPosition};
-use crate::pipeline::{ReceiverKind, SignalPipeline};
+use crate::pipeline::{PipelineExportError, ReceiverKind, SignalPipeline};
 use skid_protocol::otlp::ExportLogsServiceRequest;
 use skid_protocol::otlp::tonic::common::v1::{AnyValue, InstrumentationScope, KeyValue, any_value};
 use skid_protocol::otlp::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs, SeverityNumber};
@@ -20,7 +20,7 @@ use tracing::{info, warn};
 
 const ROTATION_FINGERPRINT_BYTES: usize = 64;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct TailState {
     initialized: bool,
     offset: u64,
@@ -28,6 +28,12 @@ struct TailState {
     pending_line: Vec<u8>,
     pending_line_truncated: bool,
     unavailable: bool,
+}
+
+#[derive(Debug)]
+enum PollAndExportError {
+    Source(io::Error),
+    Export(PipelineExportError),
 }
 
 pub async fn serve(config: DatabaseLogsReceiverConfig, pipeline: SignalPipeline) {
@@ -42,16 +48,17 @@ pub async fn serve(config: DatabaseLogsReceiverConfig, pipeline: SignalPipeline)
     loop {
         interval.tick().await;
         for (source, state) in config.sources.iter().zip(&mut states) {
-            match poll_source(
+            match poll_and_export_source(
                 source,
                 state,
                 config.start_at,
                 config.max_line_bytes,
                 config.max_read_bytes,
+                &pipeline,
             )
             .await
             {
-                Ok(lines) => {
+                Ok(count) => {
                     if state.unavailable {
                         info!(
                             database = %source.system,
@@ -60,12 +67,7 @@ pub async fn serve(config: DatabaseLogsReceiverConfig, pipeline: SignalPipeline)
                         );
                         state.unavailable = false;
                     }
-                    if !lines.is_empty() {
-                        let count = lines.len();
-                        let request = export_request(source, lines);
-                        pipeline
-                            .export(ReceiverKind::DatabaseLogs, Signal::Logs(request))
-                            .await;
+                    if count > 0 {
                         info!(
                             database = %source.system,
                             path = %source.path.display(),
@@ -74,7 +76,7 @@ pub async fn serve(config: DatabaseLogsReceiverConfig, pipeline: SignalPipeline)
                         );
                     }
                 }
-                Err(err) => {
+                Err(PollAndExportError::Source(err)) => {
                     if !state.unavailable {
                         warn!(
                             database = %source.system,
@@ -85,9 +87,45 @@ pub async fn serve(config: DatabaseLogsReceiverConfig, pipeline: SignalPipeline)
                         state.unavailable = true;
                     }
                 }
+                Err(PollAndExportError::Export(err)) => {
+                    warn!(
+                        database = %source.system,
+                        path = %source.path.display(),
+                        %err,
+                        "database log export failed; tail checkpoint restored for retry"
+                    );
+                }
             }
         }
     }
+}
+
+async fn poll_and_export_source(
+    source: &DatabaseLogSourceConfig,
+    state: &mut TailState,
+    start_at: LogStartPosition,
+    max_line_bytes: usize,
+    max_read_bytes: usize,
+    pipeline: &SignalPipeline,
+) -> Result<usize, PollAndExportError> {
+    let checkpoint = state.clone();
+    let lines = poll_source(source, state, start_at, max_line_bytes, max_read_bytes)
+        .await
+        .map_err(PollAndExportError::Source)?;
+    if lines.is_empty() {
+        return Ok(0);
+    }
+
+    let count = lines.len();
+    let request = export_request(source, lines);
+    if let Err(error) = pipeline
+        .export(ReceiverKind::DatabaseLogs, Signal::Logs(request))
+        .await
+    {
+        *state = checkpoint;
+        return Err(PollAndExportError::Export(error));
+    }
+    Ok(count)
 }
 
 async fn poll_source(
@@ -304,6 +342,7 @@ fn unix_time_nanos() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AgentConfig;
     use std::path::PathBuf;
     use tokio::io::AsyncWriteExt;
 
@@ -417,6 +456,59 @@ mod tests {
                 .await
                 .unwrap(),
             ["new file"]
+        );
+
+        tokio::fs::remove_file(path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn downstream_failure_restores_tail_checkpoint() {
+        let path = std::env::temp_dir().join(format!(
+            "skid-monitor-db-log-rollback-{}-{}.log",
+            std::process::id(),
+            unix_time_nanos()
+        ));
+        tokio::fs::write(&path, b"ERROR retry me\n").await.unwrap();
+        let mut source = source();
+        source.path = path.clone();
+        let mut state = TailState::default();
+        let config: AgentConfig = serde_json::from_str(
+            r#"
+            {
+              "exporters": {
+                "debug": { "type": "logging" }
+              },
+              "pipelines": {
+                "metrics": { "exporters": ["debug"] },
+                "traces": { "exporters": ["debug"] },
+                "logs": {
+                  "receivers": ["database_logs"],
+                  "exporters": ["missing-required-exporter"]
+                }
+              }
+            }
+            "#,
+        )
+        .unwrap();
+        let pipeline = SignalPipeline::from_config(&config).unwrap();
+
+        let result = poll_and_export_source(
+            &source,
+            &mut state,
+            LogStartPosition::Beginning,
+            1024,
+            4096,
+            &pipeline,
+        )
+        .await;
+
+        assert!(matches!(result, Err(PollAndExportError::Export(_))));
+        assert_eq!(state, TailState::default());
+        assert_eq!(
+            poll_source(&source, &mut state, LogStartPosition::Beginning, 1024, 4096)
+                .await
+                .unwrap(),
+            ["ERROR retry me"]
         );
 
         tokio::fs::remove_file(path).await.unwrap();

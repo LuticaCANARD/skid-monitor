@@ -1,6 +1,6 @@
 use super::IngressMessage;
 use skid_monitor_client::receiver_loop::{
-    ReceiverControl, ReceiverMessage, spawn_receiver_managed_with_notify,
+    ReceiverControl, ReceiverMessage, spawn_solo_receiver_managed_with_notify,
 };
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -17,7 +17,7 @@ pub(crate) struct IngressControl {
 impl Ingress {
     pub(crate) fn start(ctx: &eframe::egui::Context) -> Self {
         let ctx = ctx.clone();
-        let (rx, tx) = spawn_receiver_managed_with_notify(move || ctx.request_repaint());
+        let (rx, tx) = spawn_solo_receiver_managed_with_notify(move || ctx.request_repaint());
         Self {
             rx,
             control: IngressControl { tx },

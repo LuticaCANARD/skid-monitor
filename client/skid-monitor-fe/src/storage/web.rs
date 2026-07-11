@@ -1,9 +1,12 @@
 use super::AlertRecord;
 use crate::edge::PersistedEdgeState;
 use crate::model::{AlertSeverity, AlertStatus, AlertTransition};
+use crate::platform::BrowserStorageScope;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
-use web_sys::Storage;
+use std::rc::Rc;
+use web_sys::{Storage, UrlSearchParams};
 
 const EDGES_KEY: &str = "skid-monitor.edge-state.v1";
 const ALERT_STATE_KEY: &str = "skid-monitor.alert-state.v1";
@@ -14,6 +17,7 @@ const MAX_ALERT_EVENTS: usize = 512;
 #[derive(Clone)]
 pub(super) struct BrowserStorage {
     storage: Storage,
+    scope: Rc<RefCell<BrowserStorageScope>>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -32,20 +36,58 @@ struct BrowserAlertRecord {
 }
 
 impl BrowserStorage {
-    pub(super) fn open() -> Result<(Self, Vec<PersistedEdgeState>), String> {
+    pub(super) fn initial_scope() -> BrowserStorageScope {
+        let has_cloud_startup = web_sys::window()
+            .and_then(|window| window.location().search().ok())
+            .and_then(|search| UrlSearchParams::new_with_str(&search).ok())
+            .and_then(|params| params.get("client_api"))
+            .is_some_and(|value| !value.trim().is_empty());
+        if has_cloud_startup {
+            BrowserStorageScope::CloudPending
+        } else {
+            BrowserStorageScope::Legacy
+        }
+    }
+
+    pub(super) fn open(
+        initial_scope: BrowserStorageScope,
+    ) -> Result<(Self, Vec<PersistedEdgeState>), String> {
         let storage = web_sys::window()
             .ok_or_else(|| "window is unavailable".to_string())?
             .local_storage()
             .map_err(js_error)?
             .ok_or_else(|| "localStorage is unavailable".to_string())?;
-        let restored_edges = read_json(&storage, EDGES_KEY)?.unwrap_or_default();
-        Ok((Self { storage }, restored_edges))
+        let restored_edges = match initial_scope.storage_key(EDGES_KEY) {
+            Some(key) => read_json(&storage, &key)?.unwrap_or_default(),
+            None => Vec::new(),
+        };
+        Ok((
+            Self {
+                storage,
+                scope: Rc::new(RefCell::new(initial_scope)),
+            },
+            restored_edges,
+        ))
+    }
+
+    pub(super) fn activate_scope(
+        &self,
+        scope: BrowserStorageScope,
+    ) -> Result<Vec<PersistedEdgeState>, String> {
+        self.scope.replace(scope.clone());
+        let Some(key) = scope.storage_key(EDGES_KEY) else {
+            return Ok(Vec::new());
+        };
+        Ok(read_json(&self.storage, &key)?.unwrap_or_default())
     }
 
     pub(super) fn persist_edge(&self, edge: &PersistedEdgeState) {
+        let Some(key) = self.storage_key(EDGES_KEY) else {
+            return;
+        };
         let result = (|| {
             let mut edges: Vec<PersistedEdgeState> =
-                read_json(&self.storage, EDGES_KEY)?.unwrap_or_default();
+                read_json(&self.storage, &key)?.unwrap_or_default();
             if let Some(existing) = edges.iter_mut().find(|existing| existing.key == edge.key) {
                 existing.clone_from(edge);
             } else {
@@ -53,34 +95,43 @@ impl BrowserStorage {
             }
             edges.sort_by_key(|edge| std::cmp::Reverse(edge.last_seen_unix_ms));
             edges.truncate(MAX_EDGE_STATES);
-            write_json(&self.storage, EDGES_KEY, &edges)
+            write_json(&self.storage, &key, &edges)
         })();
         report_error(result);
     }
 
     pub(super) fn delete_edge(&self, key: &str) {
+        let Some(storage_key) = self.storage_key(EDGES_KEY) else {
+            return;
+        };
         let result = (|| {
             let mut edges: Vec<PersistedEdgeState> =
-                read_json(&self.storage, EDGES_KEY)?.unwrap_or_default();
+                read_json(&self.storage, &storage_key)?.unwrap_or_default();
             edges.retain(|edge| edge.key != key);
-            write_json(&self.storage, EDGES_KEY, &edges)
+            write_json(&self.storage, &storage_key, &edges)
         })();
         report_error(result);
     }
 
     pub(super) fn persist_alert(&self, alert: &AlertRecord) {
+        let Some(events_key) = self.storage_key(ALERT_EVENTS_KEY) else {
+            return;
+        };
+        let Some(state_key) = self.storage_key(ALERT_STATE_KEY) else {
+            return;
+        };
         let result = (|| {
             let alert = BrowserAlertRecord::from(alert);
             let mut events: Vec<BrowserAlertRecord> =
-                read_json(&self.storage, ALERT_EVENTS_KEY)?.unwrap_or_default();
+                read_json(&self.storage, &events_key)?.unwrap_or_default();
             events.push(alert.clone());
             if events.len() > MAX_ALERT_EVENTS {
                 events.drain(..events.len() - MAX_ALERT_EVENTS);
             }
-            write_json(&self.storage, ALERT_EVENTS_KEY, &events)?;
+            write_json(&self.storage, &events_key, &events)?;
 
             let mut active: BTreeMap<String, BrowserAlertRecord> =
-                read_json(&self.storage, ALERT_STATE_KEY)?.unwrap_or_default();
+                read_json(&self.storage, &state_key)?.unwrap_or_default();
             match alert.status.as_str() {
                 "firing" => {
                     active.insert(alert.key.clone(), alert);
@@ -90,9 +141,13 @@ impl BrowserStorage {
                 }
                 _ => {}
             }
-            write_json(&self.storage, ALERT_STATE_KEY, &active)
+            write_json(&self.storage, &state_key, &active)
         })();
         report_error(result);
+    }
+
+    fn storage_key(&self, base: &str) -> Option<String> {
+        self.scope.borrow().storage_key(base)
     }
 }
 

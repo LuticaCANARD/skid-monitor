@@ -65,18 +65,96 @@ cd client/skid-monitor-fe
 trunk serve
 ```
 
-Open <http://127.0.0.1:8080>. Add a `ws://` or `wss://` endpoint from the
-Ingress connections control, or preconfigure one with the query string:
+Open <http://127.0.0.1:8080>. Browser ingress has two explicit modes:
+
+- **Cloud client API (`https://`, or numeric loopback `http://`)** uses Keycloak authentication,
+  one-time stream tickets, durable cursor replay, and automatic reconnect.
+- **Raw bridge (`ws://` or `wss://`)** preserves the original WebSocket bridge
+  behavior. It accepts raw `Signal` JSON/binary frames and `SignalRecord` JSON,
+  but deliberately ignores record cursors and provides no replay guarantee.
+
+Enter either kind of endpoint in the Ingress connections control. A raw bridge
+can still be preconfigured with the existing query string:
 
 ```text
 http://127.0.0.1:8080/?ingress=ws://127.0.0.1:9100/signals
 ```
+
+The current dashboard model holds one security scope at a time. Cloud mode
+therefore permits exactly one client API endpoint and cannot be mixed with raw
+bridge connections. Raw mode continues to support multiple bridge endpoints.
 
 Browsers cannot bind the agent's raw TCP listener. The WebSocket endpoint must
 bridge the existing signal transport and send either a JSON-serialized
 `skid_protocol::Signal` text message or the same JSON bytes as an ArrayBuffer.
 The native application continues to accept the existing length-prefixed TCP
 frames without any protocol change.
+
+### Keycloak cloud mode
+
+Serve the frontend and Rust client API behind the **same origin/reverse proxy**.
+The adapter enforces this before reading the session token, preventing a crafted
+`client_api` parameter from forwarding a bearer token to another origin. Route
+the split client-access server under an origin-local path; cross-origin cloud
+API endpoints are intentionally rejected rather than delegated to CORS.
+
+The hosting OIDC Authorization Code + PKCE shell is responsible for login and
+token refresh. Immediately before starting/reconnecting the Rust frontend, it
+must place the current Keycloak access token in browser `sessionStorage` under
+this exact key:
+
+```text
+skid-monitor.keycloak.access_token
+```
+
+Do not put the access token in a URL, `localStorage`, frontend configuration,
+console output, or application logs. The Rust adapter reads the token afresh
+from `sessionStorage` for each ticket request and does not retain it in
+application state. The OIDC shell should remove the key on logout.
+
+Start cloud mode by entering an absolute `https://` client API base URL, or by
+supplying `client_api` at startup (URL-encode the parameter in production):
+
+```text
+https://monitor.example/?client_api=https%3A%2F%2Fmonitor.example
+```
+
+Plain `http://` is accepted only for numeric loopback hosts such as
+`127.0.0.1`; hostname and non-loopback HTTP endpoints are rejected before the
+adapter reads or sends the access token.
+
+For each connection attempt the adapter performs a cache-disabled
+`POST /v1/stream-tickets` with `Authorization: Bearer ...`, then consumes the
+ticket exactly once through
+`wss://.../v1/stream?ticket=...&after=<cursor>`. Tickets and tokens are never
+included in application messages or logs. On close it rereads the latest
+session token, requests a fresh ticket, and retries with exponential backoff
+(1–30 seconds, at most eight consecutive attempts). Clicking **Disconnect**
+cancels pending reconnect work.
+
+The server sends JSON `SignalRecord` messages containing a durable cursor and
+the canonical signal envelope. After a full record is successfully queued for
+the dashboard, the adapter stores its cursor in `localStorage` under:
+
+```text
+skid-monitor.cloud.cursor.v1:<canonical-client-api-endpoint>:tenant:<tenant-uuid>
+```
+
+The adapter validates the complete `<tenant-uuid>.<ticket-uuid>` ticket shape,
+uses only its tenant UUID as the storage namespace, and never persists the
+ticket itself. Every `SignalRecord` tenant must match that authenticated stream
+tenant. The next cloud connection passes that tenant-specific cursor as
+`after`, ignores already-applied cursors, and continues from the first newer
+record. This cursor contract applies only to `http(s)` cloud mode, never to the
+raw `ws(s)` bridge.
+
+Persisted edge and alert state uses the same endpoint-and-tenant namespace.
+While cloud authentication is pending no dashboard state is restored or
+written; a tenant change clears in-memory signal state before restoring the new
+tenant namespace. Legacy endpoint-only cursor and unscoped dashboard keys are
+not imported into cloud namespaces, avoiding accidental cross-tenant reuse.
+See [`../../docs/cloud-solo-deployment.md`](../../docs/cloud-solo-deployment.md)
+for split cloud server configuration.
 
 For multiple node agents, open one frontend listener per node-facing endpoint.
 `SKID_MONITOR_CLIENT_ADDRS` is only read by the frontend/client side; each agent

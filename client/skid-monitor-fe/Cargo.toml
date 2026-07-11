@@ -16,8 +16,11 @@ web = ["eframe/wgpu"]
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 log = "0.4"
 skid-protocol.workspace = true
+skid-monitor-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+url = "2.5"
+uuid.workspace = true
 web-time = "1.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -32,15 +35,22 @@ eframe = { version = "0.35", default-features = false, features = ["default_font
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
+gloo-timers = { version = "0.3", features = ["futures"] }
 web-sys = { version = "0.3", features = [
     "BinaryType",
     "CloseEvent",
     "console",
     "ErrorEvent",
     "Event",
+    "Headers",
     "HtmlCanvasElement",
     "Location",
     "MessageEvent",
+    "Request",
+    "RequestCache",
+    "RequestInit",
+    "RequestMode",
+    "Response",
     "Storage",
     "UrlSearchParams",
     "WebSocket",

@@ -2,6 +2,8 @@ use super::DashboardState;
 use crate::alert::AlertStore;
 use crate::edge::{EdgeSignalDecorations, edge_key};
 use crate::model::{NodeSummary, SignalCounters, Status};
+#[cfg(target_arch = "wasm32")]
+use crate::platform::BrowserStorageScope;
 use crate::platform::{Ingress, IngressControl, IngressMessage};
 use crate::storage::StateStorage;
 use skid_protocol::protocol::Signal;
@@ -30,6 +32,8 @@ impl DashboardState {
             alerts: AlertStore::default(),
             alerts_enabled: true,
             storage: storage_init.storage,
+            #[cfg(target_arch = "wasm32")]
+            browser_storage_scope: storage_init.browser_scope,
             listeners: Default::default(),
             ingress_control: None,
         };
@@ -56,6 +60,10 @@ impl DashboardState {
                 }
                 IngressMessage::Error { listener, error } => {
                     self.observe_receiver_error(listener.as_deref(), error);
+                }
+                #[cfg(target_arch = "wasm32")]
+                IngressMessage::BrowserStorageScope(scope) => {
+                    self.observe_browser_storage_scope(scope);
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 IngressMessage::ExtensionError(error) => {
@@ -211,6 +219,51 @@ impl DashboardState {
             self.status = Status::Error(error);
         }
     }
+
+    #[cfg(target_arch = "wasm32")]
+    fn observe_browser_storage_scope(&mut self, scope: BrowserStorageScope) {
+        if self.browser_storage_scope == scope {
+            return;
+        }
+
+        let label = scope.label();
+        let restored = match &self.storage {
+            Some(storage) => storage.activate_browser_scope(scope.clone()),
+            None => Ok(Vec::new()),
+        };
+        self.browser_storage_scope = scope;
+
+        // Dashboard models are not tenant-partitioned in memory. Replace the
+        // complete signal-derived view before accepting records for a newly
+        // authenticated cloud tenant (or while authentication is pending).
+        self.counters = SignalCounters::default();
+        self.events.clear();
+        self.metrics.clear();
+        self.metric_history.clear();
+        self.nodes.clear();
+        self.edge_decorations = EdgeSignalDecorations::default();
+        self.alerts = AlertStore::default();
+        self.status = self
+            .listening_label
+            .clone()
+            .map(Status::Listening)
+            .unwrap_or(Status::Starting);
+
+        match restored {
+            Ok(edges) => {
+                let restored_nodes = self.edge_decorations.restore(edges);
+                self.nodes = restored_nodes
+                    .into_iter()
+                    .map(|node| (edge_key(&node.endpoint, &node.node), node))
+                    .collect();
+                self.push_event("storage", format!("browser state scope changed to {label}"));
+            }
+            Err(error) => self.push_event(
+                "error",
+                format!("browser state scope changed to {label}, but restore failed: {error}"),
+            ),
+        }
+    }
 }
 
 fn listener_status_label(addrs: &[String]) -> String {
@@ -230,7 +283,7 @@ fn listener_event_message(addrs: &[String]) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use skid_monitor_client::receiver_loop::ReceiverControl;

@@ -7,6 +7,8 @@ mod persistence;
 use crate::alert::AlertStore;
 use crate::edge::EdgeSignalDecorations;
 use crate::model::{EventRow, MetricSample, NodeSummary, SignalCounters, Status};
+#[cfg(target_arch = "wasm32")]
+use crate::platform::BrowserStorageScope;
 use crate::platform::IngressControl;
 use crate::storage::StateStorage;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -23,6 +25,8 @@ pub(crate) struct DashboardState {
     pub(in crate::state) alerts: AlertStore,
     pub(in crate::state) alerts_enabled: bool,
     pub(in crate::state) storage: Option<StateStorage>,
+    #[cfg(target_arch = "wasm32")]
+    pub(in crate::state) browser_storage_scope: BrowserStorageScope,
     pub(in crate::state) listeners: BTreeSet<String>,
     /// Lets the dashboard ask the running receiver loop to manage client
     /// ingress listeners at runtime.

@@ -1,5 +1,7 @@
 mod ingress;
 
+#[cfg(target_arch = "wasm32")]
+pub(crate) use ingress::BrowserStorageScope;
 pub(crate) use ingress::{Ingress, IngressControl, IngressMessage};
 
 pub(crate) struct IngressUiLabels {
@@ -26,12 +28,12 @@ pub(crate) const INGRESS_UI: IngressUiLabels = IngressUiLabels {
 #[cfg(target_arch = "wasm32")]
 pub(crate) const INGRESS_UI: IngressUiLabels = IngressUiLabels {
     title: "Ingress connections",
-    hint: "wss://monitor.example/ws",
+    hint: "https://monitor.example or wss://...",
     add: "Connect",
     remove: "Disconnect",
     empty: "no active ingress connections",
-    add_requested: "WebSocket connection requested",
-    remove_requested: "WebSocket disconnect requested",
+    add_requested: "browser ingress connection requested",
+    remove_requested: "browser ingress disconnect requested",
 };
 
 #[cfg(not(target_arch = "wasm32"))]

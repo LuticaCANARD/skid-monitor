@@ -3,6 +3,12 @@
 //! The low-level TCP bind/read path stays in [`crate::receiver`]. This module
 //! wraps that binder with extension delivery and an app-friendly channel so GUI
 //! and TUI clients can share the same receive semantics.
+//!
+//! [`spawn_receiver`], [`spawn_receiver_with_notify`],
+//! [`spawn_receiver_managed_with_notify`], and [`spawn_receiver_on`] keep their
+//! unrestricted bind behavior for compatibility. Remotely exposing those
+//! listeners requires an authenticated tunnel or equivalent external access
+//! control. ACL-free solo deployments must use a `spawn_solo_receiver_*` API.
 
 use crate::extension::ExtensionHost;
 use crate::receiver::{Receiver as SignalReceiver, listen_addrs};
@@ -20,6 +26,21 @@ type NotifyReceiverUpdate = Arc<dyn Fn() + Send + Sync + 'static>;
 /// `RemoveListener` request can find and stop the right `receive_forever`
 /// thread.
 type ListenerRegistry = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
+
+#[derive(Clone, Copy)]
+enum ListenerBindPolicy {
+    Unrestricted,
+    TrustedLocal,
+}
+
+impl ListenerBindPolicy {
+    fn bind(self, addr: &str) -> std::io::Result<SignalReceiver> {
+        match self {
+            Self::Unrestricted => SignalReceiver::bind(addr),
+            Self::TrustedLocal => SignalReceiver::bind_trusted_local(addr),
+        }
+    }
+}
 
 /// Messages emitted by the shared receiver loop.
 pub enum ReceiverMessage {
@@ -48,53 +69,111 @@ pub enum ReceiverControl {
     RemoveListener(String),
 }
 
-/// Starts the shared receiver loop on a background thread.
+/// Starts the compatibility receiver loop on a background thread.
 ///
 /// The loop binds the configured client address list, receives one length-prefixed
 /// `Signal` per TCP connection, forwards signals to the optional extension
-/// host, and emits app-facing status/messages over a channel.
+/// host, and emits app-facing status/messages over a channel. Listener binds
+/// are unrestricted; remote exposure requires external authentication or a
+/// protected tunnel. Use [`spawn_solo_receiver_managed_on`] for ACL-free solo
+/// mode.
 pub fn spawn_receiver() -> Receiver<ReceiverMessage> {
     spawn_receiver_on(listen_addrs())
 }
 
-/// Starts the shared receiver loop and calls `notify` after each emitted message.
+/// Starts the unrestricted compatibility receiver and calls `notify` after
+/// each emitted message.
+///
+/// Remote exposure requires external authentication or a protected tunnel.
 pub fn spawn_receiver_with_notify(
     notify: impl Fn() + Send + Sync + 'static,
 ) -> Receiver<ReceiverMessage> {
-    spawn_receiver_configured(listen_addrs(), true, Some(Arc::new(notify))).0
+    spawn_receiver_configured(
+        listen_addrs(),
+        ListenerBindPolicy::Unrestricted,
+        true,
+        Some(Arc::new(notify)),
+    )
+    .0
 }
 
 /// Like [`spawn_receiver_with_notify`], but also returns a control channel
 /// that lets callers manage client ingress listeners at runtime, without
-/// restarting the process.
+/// restarting the process. This compatibility API permits remote binds, so the
+/// caller must provide authentication or a protected tunnel when exposing it.
 pub fn spawn_receiver_managed_with_notify(
     notify: impl Fn() + Send + Sync + 'static,
 ) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
-    spawn_receiver_configured(listen_addrs(), true, Some(Arc::new(notify)))
+    spawn_receiver_configured(
+        listen_addrs(),
+        ListenerBindPolicy::Unrestricted,
+        true,
+        Some(Arc::new(notify)),
+    )
 }
 
-/// Starts the shared receiver loop on explicit listen addresses.
+/// Starts a managed solo-mode receiver and calls `notify` after each emitted
+/// message.
+///
+/// Solo mode accepts only numeric loopback listener addresses from the client
+/// address environment variables. The same trusted-local policy is enforced
+/// for every runtime [`ReceiverControl::AddListener`] request. Use
+/// [`spawn_receiver_managed_with_notify`] when authenticated remote listeners
+/// are intentionally allowed.
+pub fn spawn_solo_receiver_managed_with_notify(
+    notify: impl Fn() + Send + Sync + 'static,
+) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
+    spawn_receiver_configured(
+        listen_addrs(),
+        ListenerBindPolicy::TrustedLocal,
+        true,
+        Some(Arc::new(notify)),
+    )
+}
+
+/// Starts a managed solo-mode receiver on explicit trusted-local addresses.
+///
+/// Both startup addresses and runtime [`ReceiverControl::AddListener`]
+/// requests must be numeric IPv4 or IPv6 loopback socket addresses. Invalid
+/// addresses are reported as [`ReceiverMessage::Error`] without being bound.
+pub fn spawn_solo_receiver_managed_on(
+    addrs: Vec<String>,
+) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
+    spawn_receiver_configured(addrs, ListenerBindPolicy::TrustedLocal, true, None)
+}
+
+/// Starts the unrestricted compatibility receiver on explicit listen addresses.
 ///
 /// This is useful for tests and for clients that have already resolved their
-/// own configuration. Production callers normally use [`spawn_receiver`].
+/// own configuration. Remote exposure requires external authentication or a
+/// protected tunnel. Solo callers should use
+/// [`spawn_solo_receiver_managed_on`].
 pub fn spawn_receiver_on(addrs: Vec<String>) -> Receiver<ReceiverMessage> {
-    spawn_receiver_configured(addrs, true, None).0
+    spawn_receiver_configured(addrs, ListenerBindPolicy::Unrestricted, true, None).0
 }
 
 #[cfg(test)]
 pub(crate) fn spawn_receiver_on_without_extension(addrs: Vec<String>) -> Receiver<ReceiverMessage> {
-    spawn_receiver_configured(addrs, false, None).0
+    spawn_receiver_configured(addrs, ListenerBindPolicy::Unrestricted, false, None).0
 }
 
 #[cfg(test)]
 pub(crate) fn spawn_receiver_managed_on_without_extension(
     addrs: Vec<String>,
 ) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
-    spawn_receiver_configured(addrs, false, None)
+    spawn_receiver_configured(addrs, ListenerBindPolicy::Unrestricted, false, None)
+}
+
+#[cfg(test)]
+pub(crate) fn spawn_solo_receiver_managed_on_without_extension(
+    addrs: Vec<String>,
+) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
+    spawn_receiver_configured(addrs, ListenerBindPolicy::TrustedLocal, false, None)
 }
 
 fn spawn_receiver_configured(
     addrs: Vec<String>,
+    bind_policy: ListenerBindPolicy,
     start_extension: bool,
     notify: Option<NotifyReceiverUpdate>,
 ) -> (Receiver<ReceiverMessage>, Sender<ReceiverControl>) {
@@ -105,7 +184,7 @@ fn spawn_receiver_configured(
         let registry: ListenerRegistry = Arc::new(Mutex::new(HashMap::new()));
         let mut receivers = Vec::new();
         for configured_addr in addrs {
-            match SignalReceiver::bind(&configured_addr) {
+            match bind_policy.bind(&configured_addr) {
                 Ok(receiver) => {
                     let listen_addr = receiver
                         .local_addr()
@@ -169,7 +248,7 @@ fn spawn_receiver_configured(
         // (un)bind sockets without restarting the process.
         while let Ok(control) = ctrl_rx.recv() {
             match control {
-                ReceiverControl::AddListener(addr) => match SignalReceiver::bind(&addr) {
+                ReceiverControl::AddListener(addr) => match bind_policy.bind(&addr) {
                     Ok(receiver) => {
                         let listen_addr = receiver
                             .local_addr()
@@ -309,16 +388,16 @@ fn publish_to_extension(
 ) {
     match extension.lock() {
         Ok(mut guard) => {
-            if let Some(extension) = guard.as_mut() {
-                if let Err(err) = extension.publish_signal(signal) {
-                    send_message(
-                        tx,
-                        notify,
-                        ReceiverMessage::ExtensionError(format!(
-                            "failed to publish to extension host: {err}"
-                        )),
-                    );
-                }
+            if let Some(extension) = guard.as_mut()
+                && let Err(err) = extension.publish_signal(signal)
+            {
+                send_message(
+                    tx,
+                    notify,
+                    ReceiverMessage::ExtensionError(format!(
+                        "failed to publish to extension host: {err}"
+                    )),
+                );
             }
         }
         Err(err) => {

@@ -1,0 +1,11 @@
+[package]
+name = "skid-monitor-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+skid-protocol.workspace = true
+uuid.workspace = true
+web-time.workspace = true

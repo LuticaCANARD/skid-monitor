@@ -43,7 +43,10 @@ async fn handle_connection(mut stream: TcpStream, pipeline: SignalPipeline) -> s
         Signal::Traces(spans) => info!(count = span_count(spans), "received device traces"),
         Signal::Logs(logs) => info!(count = log_count(logs), "received device logs"),
     }
-    pipeline.export(ReceiverKind::Device, signal).await;
+    pipeline
+        .export(ReceiverKind::Device, signal)
+        .await
+        .map_err(std::io::Error::other)?;
     Ok(())
 }
 

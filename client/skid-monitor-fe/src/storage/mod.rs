@@ -12,11 +12,13 @@ mod worker;
 #[cfg(not(target_arch = "wasm32"))]
 use command::StorageCommand;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests;
 
 use crate::edge::PersistedEdgeState;
 use crate::model::{AlertChange, AlertSeverity, AlertStatus, AlertTransition};
+#[cfg(target_arch = "wasm32")]
+use crate::platform::BrowserStorageScope;
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc::{self, Sender};
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,6 +32,8 @@ pub(crate) struct StorageInit {
     pub(crate) storage: Option<StateStorage>,
     pub(crate) restored_edges: Vec<PersistedEdgeState>,
     pub(crate) message: Option<String>,
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) browser_scope: BrowserStorageScope,
 }
 
 #[derive(Clone)]
@@ -70,16 +74,19 @@ impl StateStorage {
 
     #[cfg(target_arch = "wasm32")]
     pub(crate) fn start() -> StorageInit {
-        match web::BrowserStorage::open() {
+        let browser_scope = web::BrowserStorage::initial_scope();
+        match web::BrowserStorage::open(browser_scope.clone()) {
             Ok((browser, restored_edges)) => StorageInit {
                 storage: Some(Self { browser }),
                 restored_edges,
                 message: Some("browser state storage ready".to_string()),
+                browser_scope,
             },
             Err(error) => StorageInit {
                 storage: None,
                 restored_edges: Vec::new(),
                 message: Some(format!("browser state storage disabled: {error}")),
+                browser_scope,
             },
         }
     }
@@ -89,6 +96,14 @@ impl StateStorage {
         let _ = self.tx.send(StorageCommand::UpsertEdge(edge.clone()));
         #[cfg(target_arch = "wasm32")]
         self.browser.persist_edge(edge);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn activate_browser_scope(
+        &self,
+        scope: BrowserStorageScope,
+    ) -> Result<Vec<PersistedEdgeState>, String> {
+        self.browser.activate_scope(scope)
     }
 
     pub(crate) fn delete_edge(&self, key: &str) {

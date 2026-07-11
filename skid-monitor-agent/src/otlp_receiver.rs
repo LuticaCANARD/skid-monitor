@@ -1,6 +1,6 @@
 //! OTLP gRPC receiver.
 
-use crate::pipeline::{ReceiverKind, SignalPipeline};
+use crate::pipeline::{PipelineExportError, ReceiverKind, SignalPipeline};
 use skid_protocol::otlp::tonic::collector::logs::v1::ExportLogsServiceResponse;
 use skid_protocol::otlp::tonic::collector::logs::v1::logs_service_server::{
     LogsService, LogsServiceServer,
@@ -21,7 +21,7 @@ use std::error::Error;
 use std::net::SocketAddr;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Clone)]
 struct OtlpIngest {
@@ -56,7 +56,8 @@ impl MetricsService for OtlpIngest {
         info!(count = metric_count(&request), "received OTLP metrics");
         self.pipeline
             .export(ReceiverKind::Otlp, Signal::Metrics(request))
-            .await;
+            .await
+            .map_err(downstream_unavailable)?;
         Ok(Response::new(ExportMetricsServiceResponse {
             partial_success: None,
         }))
@@ -73,7 +74,8 @@ impl TraceService for OtlpIngest {
         info!(count = span_count(&request), "received OTLP traces");
         self.pipeline
             .export(ReceiverKind::Otlp, Signal::Traces(request))
-            .await;
+            .await
+            .map_err(downstream_unavailable)?;
         Ok(Response::new(ExportTraceServiceResponse {
             partial_success: None,
         }))
@@ -90,11 +92,25 @@ impl LogsService for OtlpIngest {
         info!(count = log_count(&request), "received OTLP logs");
         self.pipeline
             .export(ReceiverKind::Otlp, Signal::Logs(request))
-            .await;
+            .await
+            .map_err(downstream_unavailable)?;
         Ok(Response::new(ExportLogsServiceResponse {
             partial_success: None,
         }))
     }
+}
+
+fn downstream_unavailable(error: PipelineExportError) -> Status {
+    warn!(
+        receiver = error.receiver().as_str(),
+        signal = error.signal_kind(),
+        failure_count = error.failure_count(),
+        %error,
+        "OTLP signal could not reach every required downstream exporter"
+    );
+    // Do not expose exporter addresses, OAuth details, or downstream responses
+    // to the upstream SDK.
+    Status::unavailable("required downstream telemetry exporter is unavailable")
 }
 
 fn metric_count(request: &ExportMetricsServiceRequest) -> usize {
@@ -122,4 +138,49 @@ fn log_count(request: &ExportLogsServiceRequest) -> usize {
         .flat_map(|rl| &rl.scope_logs)
         .map(|sl| sl.log_records.len())
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AgentConfig;
+
+    #[tokio::test]
+    async fn downstream_failure_returns_safe_unavailable_status() {
+        let config: AgentConfig = serde_json::from_str(
+            r#"
+            {
+              "exporters": {
+                "debug": { "type": "logging" }
+              },
+              "pipelines": {
+                "metrics": {
+                  "receivers": ["otlp"],
+                  "exporters": ["secret-downstream-name"]
+                },
+                "traces": { "exporters": ["debug"] },
+                "logs": { "exporters": ["debug"] }
+              }
+            }
+            "#,
+        )
+        .unwrap();
+        let ingest = OtlpIngest {
+            pipeline: SignalPipeline::from_config(&config).unwrap(),
+        };
+
+        let error = MetricsService::export(
+            &ingest,
+            Request::new(ExportMetricsServiceRequest::default()),
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.code(), tonic::Code::Unavailable);
+        assert_eq!(
+            error.message(),
+            "required downstream telemetry exporter is unavailable"
+        );
+        assert!(!error.message().contains("secret-downstream-name"));
+    }
 }

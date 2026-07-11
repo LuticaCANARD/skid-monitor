@@ -1,0 +1,36 @@
+[package]
+name = "skid-monitor-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum = { version = "0.8.9", features = ["json", "query", "ws"] }
+axum-server = { version = "0.7.2", default-features = false, features = ["tls-rustls-no-provider"] }
+futures-util = "0.3"
+jsonwebtoken = { version = "10.4.0", default-features = false, features = ["rust_crypto"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+serde.workspace = true
+serde_json.workspace = true
+skid-monitor-core.workspace = true
+skid-protocol.workspace = true
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "uuid", "json", "migrate", "macros", "tls-rustls-ring"] }
+tokio.workspace = true
+tonic = { version = "0.14.6", features = ["transport", "tls-ring"] }
+tower = { version = "0.5", features = ["limit"] }
+tower-http = { version = "0.6", features = ["limit", "request-id", "timeout", "trace"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[[bin]]
+name = "skid-monitor-ingress"
+path = "src/bin/ingress.rs"
+
+[[bin]]
+name = "skid-monitor-client-server"
+path = "src/bin/client_server.rs"
+
+[[bin]]
+name = "skid-monitor-migrate"
+path = "src/bin/migrate.rs"

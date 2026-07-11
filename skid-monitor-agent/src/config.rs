@@ -116,7 +116,28 @@ pub enum ExporterConfig {
     },
     Otlp {
         endpoint: String,
+        #[serde(default)]
+        auth: Option<OtlpAuthConfig>,
     },
+}
+
+/// OAuth 2.0 client-credentials settings for a cloud OTLP exporter.
+///
+/// The secret itself is deliberately not deserializable. `client_secret_env`
+/// names the environment variable that contains it at runtime.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OtlpAuthConfig {
+    pub token_url: String,
+    pub client_id: String,
+    pub client_secret_env: String,
+    /// Crash-safe file containing the next cloud ingress sequence to allocate.
+    ///
+    /// This is required for authenticated exporters so a process restart (or
+    /// wall-clock rollback) cannot reuse an already-sent sequence number.
+    pub sequence_state_path: PathBuf,
+    #[serde(default)]
+    pub scope: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -199,12 +220,15 @@ impl AgentConfig {
         validate_pipeline("logs", &self.pipelines.logs, self)?;
 
         for (name, exporter) in &self.exporters {
-            if let ExporterConfig::Otlp { endpoint } = exporter
-                && endpoint.trim().is_empty()
-            {
-                return Err(ConfigError::Validate(format!(
-                    "exporter {name:?} has an empty OTLP endpoint"
-                )));
+            if let ExporterConfig::Otlp { endpoint, auth } = exporter {
+                if endpoint.trim().is_empty() {
+                    return Err(ConfigError::Validate(format!(
+                        "exporter {name:?} has an empty OTLP endpoint"
+                    )));
+                }
+                if let Some(auth) = auth {
+                    validate_otlp_auth(name, endpoint, auth)?;
+                }
             }
         }
 
@@ -238,6 +262,77 @@ impl AgentConfig {
 
         Ok(())
     }
+}
+
+fn validate_otlp_auth(
+    exporter_name: &str,
+    endpoint: &str,
+    auth: &OtlpAuthConfig,
+) -> Result<(), ConfigError> {
+    if auth.client_id.trim().is_empty() {
+        return Err(ConfigError::Validate(format!(
+            "exporter {exporter_name:?} has an empty OAuth client_id"
+        )));
+    }
+    if auth.client_secret_env.trim().is_empty()
+        || auth.client_secret_env.contains('=')
+        || auth.client_secret_env.contains('\0')
+    {
+        return Err(ConfigError::Validate(format!(
+            "exporter {exporter_name:?} has an invalid OAuth client_secret_env"
+        )));
+    }
+    if auth.sequence_state_path.as_os_str().is_empty()
+        || auth.sequence_state_path.file_name().is_none()
+    {
+        return Err(ConfigError::Validate(format!(
+            "exporter {exporter_name:?} has an invalid sequence_state_path"
+        )));
+    }
+    if auth
+        .scope
+        .as_deref()
+        .is_some_and(|scope| scope.trim().is_empty())
+    {
+        return Err(ConfigError::Validate(format!(
+            "exporter {exporter_name:?} has an empty OAuth scope"
+        )));
+    }
+
+    let token_url = reqwest::Url::parse(auth.token_url.trim()).map_err(|_| {
+        ConfigError::Validate(format!(
+            "exporter {exporter_name:?} has an invalid OAuth token_url"
+        ))
+    })?;
+    if token_url.scheme() != "https"
+        || token_url.host_str().is_none()
+        || !token_url.username().is_empty()
+        || token_url.password().is_some()
+        || token_url.fragment().is_some()
+    {
+        return Err(ConfigError::Validate(format!(
+            "exporter {exporter_name:?} OAuth token_url must be an HTTPS URL without credentials or a fragment"
+        )));
+    }
+
+    // An access token must never be placed on a plaintext OTLP connection.
+    let endpoint_url = reqwest::Url::parse(endpoint.trim()).map_err(|_| {
+        ConfigError::Validate(format!(
+            "exporter {exporter_name:?} authenticated OTLP endpoint must be a valid HTTPS URL"
+        ))
+    })?;
+    if endpoint_url.scheme() != "https"
+        || endpoint_url.host_str().is_none()
+        || !endpoint_url.username().is_empty()
+        || endpoint_url.password().is_some()
+        || endpoint_url.fragment().is_some()
+    {
+        return Err(ConfigError::Validate(format!(
+            "exporter {exporter_name:?} authenticated OTLP endpoint must use HTTPS without credentials or a fragment"
+        )));
+    }
+
+    Ok(())
 }
 
 impl Default for AgentConfig {
@@ -518,6 +613,22 @@ mod tests {
     }
 
     #[test]
+    fn cloud_sample_config_parses_without_loading_a_secret() {
+        let mut config: AgentConfig =
+            serde_json::from_str(include_str!("../examples/agent-cloud-config.json")).unwrap();
+
+        config.apply_runtime_defaults();
+        config.validate().unwrap();
+        assert!(matches!(
+            config.exporters.get("cloud"),
+            Some(ExporterConfig::Otlp {
+                auth: Some(OtlpAuthConfig { client_id, .. }),
+                ..
+            }) if client_id == "agent-production-01"
+        ));
+    }
+
+    #[test]
     fn unknown_exporter_reference_is_rejected() {
         let mut config: AgentConfig = serde_json::from_str(
             r#"
@@ -538,5 +649,144 @@ mod tests {
         config.apply_runtime_defaults();
         let err = config.validate().unwrap_err().to_string();
         assert!(err.contains("unknown exporter"));
+    }
+
+    #[test]
+    fn legacy_unauthenticated_otlp_exporter_remains_valid() {
+        let mut config: AgentConfig = serde_json::from_str(
+            r#"
+            {
+              "exporters": {
+                "upstream": { "type": "otlp", "endpoint": "127.0.0.1:4317" }
+              },
+              "pipelines": {
+                "metrics": { "exporters": ["upstream"] },
+                "traces": { "exporters": ["upstream"] },
+                "logs": { "exporters": ["upstream"] }
+              }
+            }
+            "#,
+        )
+        .unwrap();
+
+        config.apply_runtime_defaults();
+        config.validate().unwrap();
+        assert!(matches!(
+            config.exporters.get("upstream"),
+            Some(ExporterConfig::Otlp { auth: None, .. })
+        ));
+    }
+
+    #[test]
+    fn cloud_otlp_requires_https_for_token_and_signal_endpoints() {
+        let parse = |endpoint: &str, token_url: &str| {
+            let json = format!(
+                r#"{{
+                  "exporters": {{
+                    "cloud": {{
+                      "type": "otlp",
+                      "endpoint": "{endpoint}",
+                      "auth": {{
+                        "token_url": "{token_url}",
+                        "client_id": "agent-one",
+                        "client_secret_env": "SKID_AGENT_SECRET",
+                        "sequence_state_path": "/var/lib/skid-monitor-agent/test.sequence"
+                      }}
+                    }}
+                  }},
+                  "pipelines": {{
+                    "metrics": {{ "exporters": ["cloud"] }},
+                    "traces": {{ "exporters": ["cloud"] }},
+                    "logs": {{ "exporters": ["cloud"] }}
+                  }}
+                }}"#
+            );
+            let mut config: AgentConfig = serde_json::from_str(&json).unwrap();
+            config.apply_runtime_defaults();
+            config.validate()
+        };
+
+        assert!(
+            parse(
+                "https://ingress.example.test:4317",
+                "http://id.example.test/realms/skid/protocol/openid-connect/token"
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("token_url must be an HTTPS URL")
+        );
+        assert!(
+            parse(
+                "http://ingress.example.test:4317",
+                "https://id.example.test/realms/skid/protocol/openid-connect/token"
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("endpoint must use HTTPS")
+        );
+        assert!(
+            parse(
+                "https://user:password@ingress.example.test:4317",
+                "https://id.example.test/realms/skid/protocol/openid-connect/token"
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("without credentials")
+        );
+        parse(
+            "https://ingress.example.test:4317",
+            "https://id.example.test/realms/skid/protocol/openid-connect/token",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn plaintext_client_secret_is_not_a_supported_config_field() {
+        let err = serde_json::from_str::<AgentConfig>(
+            r#"
+            {
+              "exporters": {
+                "cloud": {
+                  "type": "otlp",
+                  "endpoint": "https://ingress.example.test:4317",
+                  "auth": {
+                    "token_url": "https://id.example.test/token",
+                    "client_id": "agent-one",
+                    "client_secret_env": "SKID_AGENT_SECRET",
+                    "sequence_state_path": "/var/lib/skid-monitor-agent/test.sequence",
+                    "client_secret": "must-not-be-accepted"
+                  }
+                }
+              }
+            }
+            "#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("unknown field `client_secret`"));
+    }
+
+    #[test]
+    fn authenticated_otlp_requires_a_sequence_state_path() {
+        let err = serde_json::from_str::<AgentConfig>(
+            r#"
+            {
+              "exporters": {
+                "cloud": {
+                  "type": "otlp",
+                  "endpoint": "https://ingress.example.test:4317",
+                  "auth": {
+                    "token_url": "https://id.example.test/token",
+                    "client_id": "agent-one",
+                    "client_secret_env": "SKID_AGENT_SECRET"
+                  }
+                }
+              }
+            }
+            "#,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("sequence_state_path"));
     }
 }

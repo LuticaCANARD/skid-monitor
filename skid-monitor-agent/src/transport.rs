@@ -5,7 +5,7 @@
 //! server와 client는 TCP 경계로 나뉠 수 있으므로, 신호를 in-process로 넘기지 않고
 //! **JSON으로 직렬화한 뒤 길이 프리픽스 프레이밍으로 TCP 소켓에 전송**한다.
 //! 대상 주소는 환경변수 `SKID_MONITOR_CLIENT_ADDR`(예: `127.0.0.1:9000`)로 지정한다.
-//! 주소가 없으면 조용히 건너뛴다.
+//! configured exporter는 required delivery이므로 주소가 없으면 오류를 반환한다.
 
 use skid_protocol::{frame, protocol::Signal};
 use std::net::TcpStream;
@@ -13,7 +13,7 @@ use std::net::TcpStream;
 /// 신호를 configured skid client로 전송한다.
 pub fn send_to_client(signal: &Signal, addr: Option<&str>) -> Result<(), String> {
     let Some(addr) = addr else {
-        return Ok(());
+        return Err("skid client exporter has no target address".to_string());
     };
 
     let payload = match frame::encode_signal_payload(signal) {

@@ -36,7 +36,13 @@ async fn main() {
         }
     };
     let guard = telemetry::init();
-    let pipeline = SignalPipeline::from_config(&config);
+    let pipeline = match SignalPipeline::from_config(&config) {
+        Ok(pipeline) => pipeline,
+        Err(err) => {
+            eprintln!("skid-monitor-agent exporter initialization error: {err}");
+            std::process::exit(2);
+        }
+    };
     info!("skid-monitor agent starting...");
     log_skid_client_targets(&config);
 
@@ -109,21 +115,30 @@ async fn run_cycle(
         .resource_metrics
         .extend(system_metrics.resource_metrics);
     info!(count = metric_count(&metrics), "collected metrics");
-    pipeline
+    if let Err(err) = pipeline
         .export(ReceiverKind::SelfObservation, Signal::Metrics(metrics))
-        .await;
+        .await
+    {
+        warn!(signal = "metrics", %err, "self-observation signal export failed");
+    }
 
     let spans = collector::collect_spans(guard);
     info!(count = span_count(&spans), "collected spans");
-    pipeline
+    if let Err(err) = pipeline
         .export(ReceiverKind::SelfObservation, Signal::Traces(spans))
-        .await;
+        .await
+    {
+        warn!(signal = "traces", %err, "self-observation signal export failed");
+    }
 
     let logs = collector::collect_logs(guard);
     info!(count = log_count(&logs), "collected logs");
-    pipeline
+    if let Err(err) = pipeline
         .export(ReceiverKind::SelfObservation, Signal::Logs(logs))
-        .await;
+        .await
+    {
+        warn!(signal = "logs", %err, "self-observation signal export failed");
+    }
 }
 
 fn metric_count(request: &ExportMetricsServiceRequest) -> usize {
@@ -164,7 +179,7 @@ fn log_skid_client_targets(config: &config::AgentConfig) {
                 Some(addr) => info!(exporter = %name, %addr, "skid client exporter target"),
                 None => warn!(
                     exporter = %name,
-                    "skid client exporter has no target address (set SKID_MONITOR_CLIENT_ADDR) — signals will be silently dropped"
+                    "required skid client exporter has no target address (set SKID_MONITOR_CLIENT_ADDR) — pipeline delivery will fail"
                 ),
             }
         }

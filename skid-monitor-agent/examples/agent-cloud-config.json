@@ -1,0 +1,25 @@
+{
+  "exporters": {
+    "cloud": {
+      "type": "otlp",
+      "endpoint": "https://ingress.monitor.example:4317",
+      "auth": {
+        "token_url": "https://id.monitor.example/realms/monitor/protocol/openid-connect/token",
+        "client_id": "agent-production-01",
+        "client_secret_env": "SKID_MONITOR_KEYCLOAK_CLIENT_SECRET",
+        "sequence_state_path": "/var/lib/skid-monitor-agent/cloud.sequence"
+      }
+    }
+  },
+  "pipelines": {
+    "metrics": {
+      "exporters": ["cloud"]
+    },
+    "traces": {
+      "exporters": ["cloud"]
+    },
+    "logs": {
+      "exporters": ["cloud"]
+    }
+  }
+}

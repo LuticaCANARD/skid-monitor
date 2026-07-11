@@ -5,6 +5,9 @@
 # .NET 빌드 산출물
 **/bin/
 **/obj/
+# Rust binary source directories are source, not .NET build output.
+!**/src/bin/
+!**/src/bin/**
 
 # 디버그 심볼
 *.pdb
