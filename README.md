@@ -10,7 +10,7 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 
 - `skid-protocol`: agent/client/edge adapter가 공유하는 OTLP 기반 직렬화 계약
 - `skid-monitor-core`: Solo/Cloud가 공유하는 signal envelope, cursor, projection/store 계약
-- `skid-monitor-server`: PostgreSQL/Keycloak 기반 cloud agent-ingress와 client-access 서버
+- `skid-monitor-server`: PostgreSQL/OIDC 기반 cloud agent-ingress와 client-access 서버
 - `skid-monitor-agent`: OpenTelemetry 및 OS별 host/system 신호를 수집해 `Signal`로 전송하는 agent
 - `skid-edge-agent`: edge 물리 계층/환경 신호를 수집해 `Signal`로 전송하는 agent
 - `skid-file-node`: read-only file offer 후보 root를 관측 신호로 알리는 초기 file node
@@ -23,10 +23,12 @@ Skid Monitor는 애플리케이션, 호스트, edge 장비, 파일 접근 노드
 [RFC 0001: Initial Skid Monitor Integration](docs/rfcs/0001-initial-skid-monitor-integration.md)를 따른다.
 Kubernetes/Talos 배포는 [docs/deployment.md](docs/deployment.md), Linux/macOS/Windows native agent의
 지속 배포와 자동 업데이트 정책은 [docs/agent-continuous-deployment.md](docs/agent-continuous-deployment.md)를
-따른다. 한 사용자용 trusted-local Solo 실행과 PostgreSQL/Keycloak 기반 분리 cloud 실행은
+따른다. 한 사용자용 trusted-local Solo 실행과 PostgreSQL/OIDC 기반 분리 cloud 실행은
 [docs/cloud-solo-deployment.md](docs/cloud-solo-deployment.md)에 정리한다.
 PostgreSQL 컴포넌트, 권한 분리와 migration 운영 절차는
 [docs/postgresql-components-and-migrations.md](docs/postgresql-components-and-migrations.md)에 정의한다.
+Cloud account provider의 Keycloak/generic OIDC claim adapter와 전환 절차는
+[docs/oidc-account-providers.md](docs/oidc-account-providers.md)에 정의한다.
 클라이언트 UI와 C# extension 개발 방향은 [skid-monitor-client/docs](skid-monitor-client/docs/README.md)에 둔다.
 
 다른 SKID 계열 repository에서 가져온 설계 후보도 먼저 RFC 0001에 통합해 정준 계약을 고정한 뒤,

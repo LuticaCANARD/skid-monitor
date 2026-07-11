@@ -5,7 +5,10 @@ use url::{Host, Url};
 use uuid::Uuid;
 
 #[cfg(target_arch = "wasm32")]
-pub(super) const ACCESS_TOKEN_SESSION_KEY: &str = "skid-monitor.keycloak.access_token";
+pub(super) const OIDC_ACCESS_TOKEN_SESSION_KEY: &str = "skid-monitor.oidc.access_token";
+#[cfg(target_arch = "wasm32")]
+pub(super) const LEGACY_KEYCLOAK_ACCESS_TOKEN_SESSION_KEY: &str =
+    "skid-monitor.keycloak.access_token";
 const CURSOR_STORAGE_PREFIX: &str = "skid-monitor.cloud.cursor.v1:";
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -17,12 +17,21 @@ const DEFAULT_CLIENT_STREAM_CONNECTIONS: usize = 1_024;
 const DEFAULT_CLIENT_REPLAY_CONCURRENCY: usize = 4;
 const MAX_CLIENT_REPLAY_CONCURRENCY: usize = 16;
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OidcRoleClaims {
+    KeycloakResourceAccess,
+    ClaimPointer(String),
+}
+
 #[derive(Clone, Debug)]
-pub struct JwtConfig {
+pub struct OidcConfig {
     pub issuer: String,
+    pub jwks_origin: String,
     pub audience: String,
     pub required_role: String,
-    pub tenant_claim: String,
+    pub tenant_pointer: String,
+    pub role_claims: OidcRoleClaims,
+    pub agent_id_pointer: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -41,7 +50,7 @@ pub struct DatabaseConfig {
 pub struct IngressConfig {
     pub listen_addr: SocketAddr,
     pub database: DatabaseConfig,
-    pub jwt: JwtConfig,
+    pub oidc: OidcConfig,
     pub tls: TlsMode,
     pub max_signal_bytes: usize,
     pub concurrency_per_connection: usize,
@@ -52,7 +61,7 @@ pub struct IngressConfig {
 pub struct ClientServerConfig {
     pub listen_addr: SocketAddr,
     pub database: DatabaseConfig,
-    pub jwt: JwtConfig,
+    pub oidc: OidcConfig,
     pub admin_role: String,
     pub tls: TlsMode,
     pub request_body_limit: usize,
@@ -84,7 +93,7 @@ impl IngressConfig {
         Ok(Self {
             listen_addr: parse_socket_addr("SKID_MONITOR_INGRESS_ADDR", "0.0.0.0:4317")?,
             database: database_config()?,
-            jwt: jwt_config(
+            oidc: oidc_config(
                 "SKID_MONITOR_INGRESS_AUDIENCE",
                 "SKID_MONITOR_INGRESS_ROLE",
                 "telemetry-ingest",
@@ -117,7 +126,7 @@ impl ClientServerConfig {
         Ok(Self {
             listen_addr: parse_socket_addr("SKID_MONITOR_CLIENT_SERVER_ADDR", "0.0.0.0:8080")?,
             database: database_config()?,
-            jwt: jwt_config(
+            oidc: oidc_config(
                 "SKID_MONITOR_CLIENT_AUDIENCE",
                 "SKID_MONITOR_CLIENT_READ_ROLE",
                 "telemetry-read",
@@ -228,25 +237,103 @@ fn validate_database_url(value: &str, tls_terminated: bool) -> Result<(), Config
     }
 }
 
-fn jwt_config(
+fn oidc_config(
     audience_env: &str,
     role_env: &str,
     default_role: &str,
-) -> Result<JwtConfig, ConfigError> {
-    let issuer = normalized_https_issuer(&required("SKID_MONITOR_KEYCLOAK_ISSUER")?)?;
-    Ok(JwtConfig {
+) -> Result<OidcConfig, ConfigError> {
+    let issuer = env_non_empty("SKID_MONITOR_OIDC_ISSUER")
+        .or_else(|| env_non_empty("SKID_MONITOR_KEYCLOAK_ISSUER"))
+        .ok_or_else(|| {
+            ConfigError(
+                "required setting SKID_MONITOR_OIDC_ISSUER is missing (legacy SKID_MONITOR_KEYCLOAK_ISSUER is also accepted)"
+                    .to_string(),
+            )
+        })?;
+    let tenant_pointer = match env_non_empty("SKID_MONITOR_OIDC_TENANT_POINTER") {
+        Some(pointer) => validated_claim_pointer("SKID_MONITOR_OIDC_TENANT_POINTER", &pointer)?,
+        None => env_non_empty("SKID_MONITOR_TENANT_CLAIM")
+            .map(|claim| top_level_claim_pointer(&claim))
+            .unwrap_or_else(|| "/tenant_id".to_string()),
+    };
+    let role_claims = parse_oidc_role_claims(
+        env_non_empty("SKID_MONITOR_OIDC_CLAIMS_PROFILE").as_deref(),
+        env_non_empty("SKID_MONITOR_OIDC_ROLES_POINTER").as_deref(),
+    )?;
+    let agent_id_pointer = env_non_empty("SKID_MONITOR_OIDC_AGENT_ID_POINTER")
+        .map(|pointer| validated_claim_pointer("SKID_MONITOR_OIDC_AGENT_ID_POINTER", &pointer))
+        .transpose()?;
+    let issuer = normalized_https_issuer(&issuer)?;
+    let jwks_origin = match env_non_empty("SKID_MONITOR_OIDC_JWKS_ORIGIN") {
+        Some(origin) => normalized_https_origin("SKID_MONITOR_OIDC_JWKS_ORIGIN", &origin)?,
+        None => https_origin("SKID_MONITOR_OIDC_ISSUER", &issuer)?,
+    };
+    Ok(OidcConfig {
         issuer,
+        jwks_origin,
         audience: required(audience_env)?,
         required_role: env_non_empty(role_env).unwrap_or_else(|| default_role.to_string()),
-        tenant_claim: env_non_empty("SKID_MONITOR_TENANT_CLAIM")
-            .unwrap_or_else(|| "tenant_id".to_string()),
+        tenant_pointer,
+        role_claims,
+        agent_id_pointer,
     })
+}
+
+fn parse_oidc_role_claims(
+    profile: Option<&str>,
+    roles_pointer: Option<&str>,
+) -> Result<OidcRoleClaims, ConfigError> {
+    match profile
+        .unwrap_or("keycloak")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "keycloak" => {
+            if roles_pointer.is_some() {
+                return Err(ConfigError(
+                    "SKID_MONITOR_OIDC_ROLES_POINTER requires SKID_MONITOR_OIDC_CLAIMS_PROFILE=generic"
+                        .to_string(),
+                ));
+            }
+            Ok(OidcRoleClaims::KeycloakResourceAccess)
+        }
+        "generic" => Ok(OidcRoleClaims::ClaimPointer(validated_claim_pointer(
+            "SKID_MONITOR_OIDC_ROLES_POINTER",
+            roles_pointer.unwrap_or("/roles"),
+        )?)),
+        _ => Err(ConfigError(
+            "SKID_MONITOR_OIDC_CLAIMS_PROFILE must be keycloak or generic".to_string(),
+        )),
+    }
+}
+
+fn validated_claim_pointer(name: &str, pointer: &str) -> Result<String, ConfigError> {
+    let pointer = pointer.trim();
+    if pointer.is_empty()
+        || !pointer.starts_with('/')
+        || pointer.len() > 1_024
+        || pointer.chars().any(char::is_control)
+        || pointer
+            .split('~')
+            .skip(1)
+            .any(|suffix| !matches!(suffix.chars().next(), Some('0' | '1')))
+    {
+        return Err(ConfigError(format!(
+            "{name} must be a non-empty RFC 6901 JSON pointer using only ~0 and ~1 escapes"
+        )));
+    }
+    Ok(pointer.to_string())
+}
+
+fn top_level_claim_pointer(claim: &str) -> String {
+    format!("/{}", claim.replace('~', "~0").replace('/', "~1"))
 }
 
 fn normalized_https_issuer(value: &str) -> Result<String, ConfigError> {
     let issuer = value.trim().trim_end_matches('/');
     let parsed = reqwest::Url::parse(issuer).map_err(|_| {
-        ConfigError("SKID_MONITOR_KEYCLOAK_ISSUER must be a valid HTTPS URL".to_string())
+        ConfigError("SKID_MONITOR_OIDC_ISSUER must be a valid HTTPS URL".to_string())
     })?;
     if parsed.scheme() != "https"
         || parsed.host_str().is_none()
@@ -256,11 +343,39 @@ fn normalized_https_issuer(value: &str) -> Result<String, ConfigError> {
         || parsed.fragment().is_some()
     {
         return Err(ConfigError(
-            "SKID_MONITOR_KEYCLOAK_ISSUER must be an HTTPS URL without credentials, query, or fragment"
+            "SKID_MONITOR_OIDC_ISSUER must be an HTTPS URL without credentials, query, or fragment"
                 .to_string(),
         ));
     }
     Ok(issuer.to_string())
+}
+
+fn normalized_https_origin(name: &str, value: &str) -> Result<String, ConfigError> {
+    let value = value.trim().trim_end_matches('/');
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|_| ConfigError(format!("{name} must be a valid HTTPS origin")))?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/"
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(ConfigError(format!(
+            "{name} must contain only an HTTPS scheme, host, and optional port"
+        )));
+    }
+    Ok(parsed.origin().ascii_serialization())
+}
+
+fn https_origin(name: &str, value: &str) -> Result<String, ConfigError> {
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|_| ConfigError(format!("{name} must be a valid HTTPS URL")))?;
+    if parsed.scheme() != "https" || parsed.host_str().is_none() {
+        return Err(ConfigError(format!("{name} must use HTTPS")));
+    }
+    Ok(parsed.origin().ascii_serialization())
 }
 
 fn tls_mode(cert_env: &str, key_env: &str, terminated_env: &str) -> Result<TlsMode, ConfigError> {
@@ -387,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn keycloak_issuer_rejects_url_confusion() {
+    fn oidc_issuer_rejects_url_confusion() {
         assert_eq!(
             normalized_https_issuer("https://id.example/realms/skid/").unwrap(),
             "https://id.example/realms/skid"
@@ -400,6 +515,42 @@ mod tests {
         ] {
             assert!(normalized_https_issuer(invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn oidc_jwks_origin_is_https_and_pathless() {
+        assert_eq!(
+            normalized_https_origin("TEST", "https://keys.example:8443/").unwrap(),
+            "https://keys.example:8443"
+        );
+        for invalid in [
+            "http://keys.example",
+            "https://user@keys.example",
+            "https://keys.example/jwks",
+            "https://keys.example?tenant=a",
+        ] {
+            assert!(
+                normalized_https_origin("TEST", invalid).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn oidc_claim_profiles_are_explicit_and_pointer_safe() {
+        assert_eq!(
+            parse_oidc_role_claims(None, None).unwrap(),
+            OidcRoleClaims::KeycloakResourceAccess
+        );
+        assert_eq!(
+            parse_oidc_role_claims(Some("generic"), Some("/https:~1~1example.com~1roles")).unwrap(),
+            OidcRoleClaims::ClaimPointer("/https:~1~1example.com~1roles".to_string())
+        );
+        assert!(parse_oidc_role_claims(Some("keycloak"), Some("/roles")).is_err());
+        assert!(parse_oidc_role_claims(Some("unknown"), None).is_err());
+        assert!(validated_claim_pointer("TEST", "roles").is_err());
+        assert!(validated_claim_pointer("TEST", "/roles/~2invalid").is_err());
+        assert_eq!(top_level_claim_pointer("org/tenant~id"), "/org~1tenant~0id");
     }
 
     #[test]

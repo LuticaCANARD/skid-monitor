@@ -395,7 +395,7 @@ impl OAuthTokenProvider {
 
     async fn access_token(&self) -> Result<String, String> {
         // Holding this mutex through refresh intentionally coalesces concurrent
-        // refreshes into one Keycloak request.
+        // refreshes into one provider token request.
         let mut cache = self.cache.lock().await;
         if let Some(token) = cache.as_ref()
             && token.refresh_at > Instant::now()
@@ -867,7 +867,7 @@ fn default_token_lifetime_secs() -> u64 {
 
 fn refresh_after(expires_in_secs: u64) -> Duration {
     // Refresh 20% early for short-lived tokens and up to 60 seconds early
-    // for the common Keycloak lifetimes.
+    // for common provider lifetimes.
     let margin = (expires_in_secs / 5).clamp(1, 60);
     Duration::from_secs(expires_in_secs.saturating_sub(margin))
 }
@@ -1194,7 +1194,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cached_token_is_attached_without_contacting_keycloak() {
+    async fn cached_oidc_token_is_attached_without_contacting_provider() {
         let directory = TestDirectory::new("token");
         let auth = test_auth(directory.state_path());
         let exporter = OtlpExporter::new("https://ingress.example.test:4317", Some(&auth)).unwrap();

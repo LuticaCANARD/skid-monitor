@@ -1221,10 +1221,10 @@ impl PgSignalStore {
     /// Creates a short-lived, opaque credential that a browser may exchange
     /// exactly once when upgrading its signal stream to a WebSocket.
     ///
-    /// The authenticated caller's Keycloak subject is retained server-side;
+    /// The authenticated caller's OIDC subject is retained server-side;
     /// the bearer token itself never needs to appear in a WebSocket URL or
     /// subprotocol. The ticket expires at the earlier of `ttl` and the
-    /// Keycloak token's `authorized_until_unix` (`exp`) value. PostgreSQL's
+    /// OIDC token's `authorized_until_unix` (`exp`) value. PostgreSQL's
     /// transaction clock rejects an authorization that is already expired.
     /// Expired and already-consumed tickets for the same tenant are
     /// opportunistically removed in the creation transaction.
@@ -2298,8 +2298,8 @@ mod tests {
     #[test]
     fn stream_ticket_subject_is_trimmed_and_bounded() {
         assert_eq!(
-            required_stream_ticket_subject(" keycloak-subject ").unwrap(),
-            "keycloak-subject"
+            required_stream_ticket_subject(" oidc-subject ").unwrap(),
+            "oidc-subject"
         );
         assert!(matches!(
             required_stream_ticket_subject("  "),

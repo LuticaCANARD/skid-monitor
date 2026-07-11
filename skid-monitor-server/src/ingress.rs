@@ -1,10 +1,10 @@
-//! Keycloak-authenticated OTLP ingress for the cloud deployment.
+//! OIDC-authenticated OTLP ingress for the cloud deployment.
 //!
 //! This plane accepts agent credentials only. It commits each canonical
 //! [`Signal`] to PostgreSQL before returning the OTLP acknowledgement, leaving
 //! client reads and live streaming to the separate client-access plane.
 
-use crate::auth::{AuthError, JwtVerifier};
+use crate::auth::{AuthError, OidcVerifier};
 use crate::config::{IngressConfig, TlsMode};
 use crate::store::{PgSignalStore, PgStoreError, PgStoreOptions};
 use skid_monitor_core::{AgentId, SignalEnvelope, SignalScope, SignalWriter, TenantId};
@@ -39,7 +39,7 @@ const SEQUENCE_METADATA: &str = "x-skid-sequence";
 #[derive(Clone)]
 struct CloudOtlpIngest {
     store: PgSignalStore,
-    verifier: JwtVerifier,
+    verifier: OidcVerifier,
 }
 
 #[derive(Debug)]
@@ -67,7 +67,7 @@ pub async fn serve(config: IngressConfig) -> Result<(), Box<dyn Error + Send + S
     .await?;
     store.verify_ready().await?;
 
-    let verifier = JwtVerifier::discover(config.jwt.clone()).await?;
+    let verifier = OidcVerifier::discover(config.oidc.clone()).await?;
     let ingest = CloudOtlpIngest { store, verifier };
 
     let metrics = MetricsServiceServer::new(ingest.clone())

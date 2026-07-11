@@ -1,7 +1,7 @@
 use super::cloud::{
-    ACCESS_TOKEN_SESSION_KEY, BrowserEndpoint, DecodedJsonSignal, cursor_storage_key,
-    decode_json_signal, normalize_endpoint, stream_endpoint, tenant_from_stream_ticket,
-    ticket_endpoint,
+    BrowserEndpoint, DecodedJsonSignal, LEGACY_KEYCLOAK_ACCESS_TOKEN_SESSION_KEY,
+    OIDC_ACCESS_TOKEN_SESSION_KEY, cursor_storage_key, decode_json_signal, normalize_endpoint,
+    stream_endpoint, tenant_from_stream_ticket, ticket_endpoint,
 };
 use super::{BrowserStorageScope, IngressMessage};
 use gloo_timers::future::TimeoutFuture;
@@ -716,18 +716,31 @@ fn access_token() -> Result<String, String> {
         .session_storage()
         .map_err(js_error)?
         .ok_or_else(|| "browser sessionStorage is unavailable".to_string())?;
-    let token = storage
-        .get_item(ACCESS_TOKEN_SESSION_KEY)
-        .map_err(js_error)?
-        .unwrap_or_default();
+    let oidc_token = storage
+        .get_item(OIDC_ACCESS_TOKEN_SESSION_KEY)
+        .map_err(js_error)?;
+    let (token, key) = match oidc_token {
+        Some(token) => (token, OIDC_ACCESS_TOKEN_SESSION_KEY),
+        None => match storage
+            .get_item(LEGACY_KEYCLOAK_ACCESS_TOKEN_SESSION_KEY)
+            .map_err(js_error)?
+        {
+            Some(token) => (token, LEGACY_KEYCLOAK_ACCESS_TOKEN_SESSION_KEY),
+            None => {
+                return Err(format!(
+                    "OIDC access token is missing from sessionStorage key {OIDC_ACCESS_TOKEN_SESSION_KEY} (legacy {LEGACY_KEYCLOAK_ACCESS_TOKEN_SESSION_KEY} is also accepted)"
+                ));
+            }
+        },
+    };
     let token = token.trim();
     if token.is_empty() {
         return Err(format!(
-            "Keycloak access token is missing from sessionStorage key {ACCESS_TOKEN_SESSION_KEY}"
+            "OIDC access token is missing from sessionStorage key {key}"
         ));
     }
     if token.len() > MAX_ACCESS_TOKEN_BYTES || token.chars().any(char::is_control) {
-        return Err("Keycloak access token in sessionStorage is invalid".to_string());
+        return Err("OIDC access token in sessionStorage is invalid".to_string());
     }
     Ok(token.to_string())
 }

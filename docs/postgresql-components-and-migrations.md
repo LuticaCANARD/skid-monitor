@@ -12,7 +12,7 @@ schema migration 절차를 정의한다. Solo mode는 PostgreSQL을 사용하지
 ## 서비스 경계
 
 ```text
-                                       Keycloak
+                                     OIDC provider
                                JWT issuer / JWKS / roles
                                   /                 \
                                  v                   v
@@ -30,7 +30,7 @@ agent -- OTLP/gRPC --> skid-monitor-ingress    skid-monitor-client-server <-- RE
                       privileged pool        (planned)           and HA (operations)
 ```
 
-PostgreSQL은 인증 서버가 아니다. Keycloak이 사용자와 agent를 인증하고, Rust 서버가 검증된
+PostgreSQL은 인증 서버가 아니다. OIDC provider가 사용자와 agent를 인증하고, Rust 서버가 검증된
 `tenant_id` UUID를 transaction-local `app.tenant_id`에 넣는다. PostgreSQL RLS는 애플리케이션의
 tenant 조건에 더해 적용되는 최종 데이터 격리선이다.
 
@@ -47,7 +47,7 @@ tenant 조건에 더해 적용되는 최종 데이터 격리선이다.
 | backup/PITR와 restore 검증 | 운영 구성 | managed service 정책과 별도 복구 훈련으로 수행; application pod가 backup을 만들지 않음 |
 
 Managed service의 control plane, WAL 보관, replica 승격, snapshot과 암호화 키는 데이터베이스
-운영 영역이다. 애플리케이션은 schema와 query, tenant 격리, migration artifact를 소유한다. Keycloak과
+운영 영역이다. 애플리케이션은 schema와 query, tenant 격리, migration artifact를 소유한다. OIDC provider와
 PostgreSQL은 서로 독립된 장애 도메인으로 두며 데이터베이스를 public network에 직접 노출하지 않는다.
 
 ## 연결 구조와 용량
@@ -430,7 +430,7 @@ DB snapshot 복원은 일상적인 application rollback이 아니다. 다른 ten
 4. 승인된 image의 `skid-monitor-migrate` Job을 migration credential로 한 번 실행한다.
 5. Job exit code, `_sqlx_migrations` version/success/checksum과 schema/grant/RLS postflight를 확인한다.
 6. 정확히 같은 embedded migration 집합을 가진 ingress/client image를 배포한다.
-7. startup/readiness, Keycloak auth, tenant RLS와 canary ingest/replay를 검증한다.
+7. startup/readiness, OIDC auth, tenant RLS와 canary ingest/replay를 검증한다.
 8. client server를 먼저 소수 replica로 올려 read path를 확인하고, ingress를 canary부터 재개한다.
 9. 관찰 window 동안 DB/error 지표를 확인한 뒤 전체 replica를 복구한다.
 
@@ -474,7 +474,7 @@ cargo test -p skid-monitor-server --test postgres_store \
   postgres_store_is_idempotent_projected_and_tenant_isolated -- --ignored --exact
 ```
 
-현재 이 test는 기본 test run에서 ignored이며 자동으로 production PostgreSQL/Keycloak E2E를 수행하지
+현재 이 test는 기본 test run에서 ignored이며 자동으로 production PostgreSQL/OIDC E2E를 수행하지
 않는다. CI에서는 disposable DB에 v1부터 최신까지 migration한 경우와, 지원하는 이전 schema snapshot에서
 순차 upgrade한 경우를 모두 추가해야 한다.
 
@@ -539,4 +539,4 @@ runbook link를 남긴다.
 | LISTEN/NOTIFY | cursor wake-up + 2초 poll 구현 | notification/lag 운영 지표와 규모 시험 |
 | HA/backup/PITR | application 외부 책임 | managed 정책, 수치화한 RPO/RTO, restore drill |
 | Retention/backfill | 자동화 없음 | 별도 Rust maintenance Job과 partition 계획 |
-| PostgreSQL E2E | ignored integration test 존재 | disposable CI DB와 실제 staging Keycloak/PG 검증 |
+| PostgreSQL E2E | ignored integration test 존재 | disposable CI DB와 실제 staging OIDC/PG 검증 |

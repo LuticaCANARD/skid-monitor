@@ -67,7 +67,7 @@ trunk serve
 
 Open <http://127.0.0.1:8080>. Browser ingress has two explicit modes:
 
-- **Cloud client API (`https://`, or numeric loopback `http://`)** uses Keycloak authentication,
+- **Cloud client API (`https://`, or numeric loopback `http://`)** uses OIDC authentication,
   one-time stream tickets, durable cursor replay, and automatic reconnect.
 - **Raw bridge (`ws://` or `wss://`)** preserves the original WebSocket bridge
   behavior. It accepts raw `Signal` JSON/binary frames and `SignalRecord` JSON,
@@ -90,7 +90,7 @@ bridge the existing signal transport and send either a JSON-serialized
 The native application continues to accept the existing length-prefixed TCP
 frames without any protocol change.
 
-### Keycloak cloud mode
+### OIDC cloud mode
 
 Serve the frontend and Rust client API behind the **same origin/reverse proxy**.
 The adapter enforces this before reading the session token, preventing a crafted
@@ -100,17 +100,21 @@ API endpoints are intentionally rejected rather than delegated to CORS.
 
 The hosting OIDC Authorization Code + PKCE shell is responsible for login and
 token refresh. Immediately before starting/reconnecting the Rust frontend, it
-must place the current Keycloak access token in browser `sessionStorage` under
-this exact key:
+must place the current OIDC access token in browser `sessionStorage` under this
+exact key:
 
 ```text
-skid-monitor.keycloak.access_token
+skid-monitor.oidc.access_token
 ```
 
 Do not put the access token in a URL, `localStorage`, frontend configuration,
 console output, or application logs. The Rust adapter reads the token afresh
 from `sessionStorage` for each ticket request and does not retain it in
 application state. The OIDC shell should remove the key on logout.
+During migration the adapter also reads the legacy
+`skid-monitor.keycloak.access_token` key when the new key is absent. A new key
+that exists but is empty or invalid fails closed instead of falling back; the
+shell should remove both keys on logout.
 
 Start cloud mode by entering an absolute `https://` client API base URL, or by
 supplying `client_api` at startup (URL-encode the parameter in production):

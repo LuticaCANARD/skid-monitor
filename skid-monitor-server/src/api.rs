@@ -1,9 +1,9 @@
 //! Tenant-scoped client access plane for cloud mode.
 //!
 //! This process never accepts agent credentials. Every query and stream is
-//! authorized with a Keycloak user token and constrained to the token's tenant.
+//! authorized with an OIDC user token and constrained to the token's tenant.
 
-use crate::auth::{AuthError, AuthenticatedPrincipal, JwtVerifier};
+use crate::auth::{AuthError, AuthenticatedPrincipal, OidcVerifier};
 use crate::config::{ClientServerConfig, TlsMode};
 use crate::store::{
     AgentRecord, PgSignalStore, PgStoreError, PgStoreOptions, ProjectionRecord,
@@ -42,7 +42,7 @@ type BoxError = Box<dyn Error + Send + Sync>;
 #[derive(Clone)]
 struct AppState {
     store: PgSignalStore,
-    auth: JwtVerifier,
+    auth: OidcVerifier,
     admin_role: Arc<str>,
     stream_batch_size: usize,
     stream_batch_bytes: usize,
@@ -174,7 +174,7 @@ pub async fn serve(config: ClientServerConfig) -> Result<(), BoxError> {
     )
     .await?;
     store.verify_ready().await?;
-    let auth = JwtVerifier::discover(config.jwt.clone()).await?;
+    let auth = OidcVerifier::discover(config.oidc.clone()).await?;
     let (notifications, _) = broadcast::channel(1024);
     tokio::spawn(watch_signal_notifications(
         config.database.url.clone(),
@@ -727,7 +727,7 @@ fn unix_now() -> u64 {
 
 fn auth_error(error: AuthError) -> ApiError {
     if matches!(&error, AuthError::Discovery(_) | AuthError::KeySet(_)) {
-        warn!(%error, "Keycloak verification backend is unavailable");
+        warn!(%error, "OIDC verification backend is unavailable");
     }
     let (status, code) = match error {
         AuthError::MissingRole(_) => (StatusCode::FORBIDDEN, "forbidden"),
@@ -745,7 +745,7 @@ fn auth_error(error: AuthError) -> ApiError {
         } else if status == StatusCode::SERVICE_UNAVAILABLE {
             "the authentication service is temporarily unavailable".to_string()
         } else {
-            "a valid Keycloak access token is required".to_string()
+            "a valid OIDC access token is required".to_string()
         },
     }
 }

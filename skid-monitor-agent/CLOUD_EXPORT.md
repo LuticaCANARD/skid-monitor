@@ -1,16 +1,17 @@
 # Cloud OTLP export
 
 `skid-monitor-agent` can send metrics, traces, and logs to the cloud ingress
-with an OAuth 2.0 client-credentials token issued by Keycloak. The existing
+with an OAuth 2.0 client-credentials token issued by the configured OIDC/OAuth
+provider. The existing
 unauthenticated OTLP exporter remains available for trusted local deployments.
 
 Use [`examples/agent-cloud-config.json`](examples/agent-cloud-config.json) as a
 starting point, then start the agent with the configuration path and the
-Keycloak client secret in separate environment variables:
+provider client secret in separate environment variables:
 
 ```sh
 export SKID_MONITOR_AGENT_CONFIG=/etc/skid-monitor/agent-cloud-config.json
-export SKID_MONITOR_KEYCLOAK_CLIENT_SECRET='read-from-your-secret-store'
+export SKID_MONITOR_OIDC_CLIENT_SECRET='read-from-your-secret-store'
 cargo run -p skid-monitor-agent
 ```
 
@@ -28,6 +29,9 @@ the access token has the ingress audience, a UUID `tenant_id` claim, and the
 ingress role expected by the server (normally `telemetry-ingest`) under that
 audience's client roles. Audience assignment is a Keycloak client-scope or
 audience-mapper concern, not a value trusted from the agent JSON file.
+For another provider, create its client-credentials application/service
+principal and configure the generic claim pointers described in
+[`../docs/oidc-account-providers.md`](../docs/oidc-account-providers.md).
 
 The exporter obtains one token for all three signal kinds, caches it, and
 refreshes it before `expires_in`. Every authenticated exporter must also set a
@@ -48,7 +52,7 @@ for the exporter's lifetime, so a second process or exporter configured with the
 same state path fails during startup instead of risking duplicate sequences.
 Corrupt, unwritable, or otherwise unusable state also fails exporter
 initialization. Do not delete or copy an active sequence state file; give each
-Keycloak client identity exactly one state path.
+provider client identity exactly one state path.
 
 Unauthenticated OTLP exporters retain their legacy in-memory sequence because
 they are intended for trusted local deployments. Authenticated cloud exporters
@@ -88,9 +92,9 @@ deployment uses explicit OAuth scopes:
 
 ```json
 "auth": {
-  "token_url": "https://id.example/realms/monitor/protocol/openid-connect/token",
+  "token_url": "https://id.example/oauth2/token",
   "client_id": "agent-production-01",
-  "client_secret_env": "SKID_MONITOR_KEYCLOAK_CLIENT_SECRET",
+  "client_secret_env": "SKID_MONITOR_OIDC_CLIENT_SECRET",
   "sequence_state_path": "/var/lib/skid-monitor-agent/cloud.sequence",
   "scope": "monitor-ingest"
 }

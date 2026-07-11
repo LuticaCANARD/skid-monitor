@@ -1,11 +1,11 @@
-use crate::config::JwtConfig;
+use crate::config::{OidcConfig, OidcRoleClaims};
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use skid_monitor_core::{AgentId, TenantId};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -22,7 +22,7 @@ const MAX_JWKS_BYTES: usize = 1024 * 1024;
 #[derive(Clone, Debug)]
 pub struct AuthenticatedPrincipal {
     pub subject: String,
-    pub client_id: String,
+    pub agent_identity: Option<String>,
     pub tenant_id: TenantId,
     pub roles: BTreeSet<String>,
     pub preferred_username: Option<String>,
@@ -31,7 +31,13 @@ pub struct AuthenticatedPrincipal {
 
 impl AuthenticatedPrincipal {
     pub fn agent_id(&self) -> Result<AgentId, AuthError> {
-        AgentId::new(&self.client_id).map_err(|error| AuthError::InvalidClaims(error.to_string()))
+        let identity = self.agent_identity.as_deref().ok_or_else(|| {
+            AuthError::InvalidClaims(
+                "agent identity claim is missing; configure SKID_MONITOR_OIDC_AGENT_ID_POINTER for this provider"
+                    .to_string(),
+            )
+        })?;
+        AgentId::new(identity).map_err(|error| AuthError::InvalidClaims(error.to_string()))
     }
 
     pub fn has_role(&self, role: &str) -> bool {
@@ -40,8 +46,8 @@ impl AuthenticatedPrincipal {
 }
 
 #[derive(Clone)]
-pub struct JwtVerifier {
-    config: JwtConfig,
+pub struct OidcVerifier {
+    config: OidcConfig,
     client: reqwest::Client,
     jwks_uri: String,
     keys: Arc<RwLock<JwkSet>>,
@@ -83,31 +89,8 @@ struct DiscoveryDocument {
     jwks_uri: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-struct AccessClaims {
-    sub: String,
-    iat: u64,
-    exp: u64,
-    #[serde(default)]
-    azp: Option<String>,
-    #[serde(default)]
-    client_id: Option<String>,
-    #[serde(default)]
-    preferred_username: Option<String>,
-    #[serde(default)]
-    resource_access: HashMap<String, ClientRoleClaims>,
-    #[serde(flatten)]
-    extra: HashMap<String, Value>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-struct ClientRoleClaims {
-    #[serde(default)]
-    roles: Vec<String>,
-}
-
-impl JwtVerifier {
-    pub async fn discover(config: JwtConfig) -> Result<Self, AuthError> {
+impl OidcVerifier {
+    pub async fn discover(config: OidcConfig) -> Result<Self, AuthError> {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(5))
@@ -126,19 +109,12 @@ impl JwtVerifier {
                 document.issuer, config.issuer
             )));
         }
-        if !document
-            .jwks_uri
-            .starts_with(&format!("{}/", config.issuer))
-        {
-            return Err(AuthError::Discovery(
-                "jwks_uri must remain below the configured issuer URL".to_string(),
-            ));
-        }
-        let keys = fetch_keys(&client, &document.jwks_uri).await?;
+        let jwks_uri = validated_jwks_uri(&config, &document.jwks_uri)?;
+        let keys = fetch_keys(&client, &jwks_uri).await?;
         Ok(Self {
             config,
             client,
-            jwks_uri: document.jwks_uri,
+            jwks_uri,
             keys: Arc::new(RwLock::new(keys)),
             last_jwks_refresh: Arc::new(Mutex::new(Instant::now())),
         })
@@ -189,7 +165,7 @@ impl JwtVerifier {
         validation.set_audience(&[&self.config.audience]);
         validation.set_issuer(&[&self.config.issuer]);
         validation.set_required_spec_claims(&["exp", "iat", "iss", "aud", "sub"]);
-        let claims = decode::<AccessClaims>(token, &key, &validation)
+        let claims = decode::<Value>(token, &key, &validation)
             .map_err(|error| AuthError::InvalidToken(error.to_string()))?
             .claims;
         principal_from_claims(&self.config, claims, required_role)
@@ -232,6 +208,24 @@ impl JwtVerifier {
             .transpose()
             .map_err(|error| AuthError::InvalidToken(error.to_string()))
     }
+}
+
+fn validated_jwks_uri(config: &OidcConfig, value: &str) -> Result<String, AuthError> {
+    let jwks_url = reqwest::Url::parse(value)
+        .map_err(|_| AuthError::Discovery("jwks_uri is not a valid URL".to_string()))?;
+    if jwks_url.scheme() != "https"
+        || jwks_url.host_str().is_none()
+        || !jwks_url.username().is_empty()
+        || jwks_url.password().is_some()
+        || jwks_url.fragment().is_some()
+        || jwks_url.origin().ascii_serialization() != config.jwks_origin
+    {
+        return Err(AuthError::Discovery(
+            "jwks_uri must use the configured HTTPS JWKS origin without credentials or a fragment"
+                .to_string(),
+        ));
+    }
+    Ok(jwks_url.to_string())
 }
 
 async fn fetch_keys(client: &reqwest::Client, uri: &str) -> Result<JwkSet, AuthError> {
@@ -281,62 +275,152 @@ fn bearer_token(authorization: &str) -> Result<&str, AuthError> {
 }
 
 fn principal_from_claims(
-    config: &JwtConfig,
-    claims: AccessClaims,
+    config: &OidcConfig,
+    claims: Value,
     required_role: &str,
 ) -> Result<AuthenticatedPrincipal, AuthError> {
-    let subject = claims.sub.trim();
-    if subject.is_empty() || subject.len() > 1_024 || subject.chars().any(char::is_control) {
-        return Err(AuthError::InvalidClaims(
-            "sub must be a non-empty identifier of at most 1024 bytes".to_string(),
-        ));
-    }
+    let subject = required_string_claim(&claims, "/sub", "sub", 1_024)?;
+    let iat = required_u64_claim(&claims, "/iat", "iat")?;
+    let exp = required_u64_claim(&claims, "/exp", "exp")?;
     validate_token_times(
-        claims.iat,
-        claims.exp,
+        iat,
+        exp,
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs(),
     )?;
-    let tenant = claims
-        .extra
-        .get(&config.tenant_claim)
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            AuthError::InvalidClaims(format!(
-                "required tenant claim {:?} is missing or is not a string",
-                config.tenant_claim
-            ))
-        })?;
+    let tenant = required_string_claim(&claims, &config.tenant_pointer, "tenant identity", 128)?;
     let tenant_id = TenantId::from_str(tenant)
         .map_err(|error| AuthError::InvalidClaims(format!("invalid tenant id: {error}")))?;
-    let client_id = claims
-        .azp
-        .or(claims.client_id)
-        .ok_or_else(|| AuthError::InvalidClaims("azp/client_id is missing".to_string()))?;
-    let client_id = client_id.trim();
-    if client_id.is_empty() || client_id.len() > 255 || client_id.chars().any(char::is_control) {
-        return Err(AuthError::InvalidClaims(
-            "azp/client_id must be a non-empty identifier of at most 255 bytes".to_string(),
-        ));
-    }
-    let roles = claims
-        .resource_access
-        .get(&config.audience)
-        .map(|access| access.roles.iter().cloned().collect::<BTreeSet<_>>())
-        .unwrap_or_default();
+    let agent_identity = match config.agent_id_pointer.as_deref() {
+        Some(pointer) => optional_string_claim(&claims, pointer, "agent identity", 255)?,
+        None => match claims
+            .pointer("/azp")
+            .or_else(|| claims.pointer("/client_id"))
+        {
+            Some(_) => optional_string_claim(
+                &claims,
+                if claims.pointer("/azp").is_some() {
+                    "/azp"
+                } else {
+                    "/client_id"
+                },
+                "agent identity",
+                255,
+            )?,
+            None => None,
+        },
+    };
+    let roles = roles_from_claims(config, &claims)?;
     if !roles.contains(required_role) {
         return Err(AuthError::MissingRole(required_role.to_string()));
     }
+    let preferred_username =
+        optional_string_claim(&claims, "/preferred_username", "preferred_username", 1_024)?;
     Ok(AuthenticatedPrincipal {
         subject: subject.to_string(),
-        client_id: client_id.to_string(),
+        agent_identity,
         tenant_id,
         roles,
-        preferred_username: claims.preferred_username,
-        authorized_until_unix: claims.exp,
+        preferred_username,
+        authorized_until_unix: exp,
     })
+}
+
+fn roles_from_claims(config: &OidcConfig, claims: &Value) -> Result<BTreeSet<String>, AuthError> {
+    let value = match &config.role_claims {
+        OidcRoleClaims::KeycloakResourceAccess => claims
+            .get("resource_access")
+            .and_then(Value::as_object)
+            .and_then(|resources| resources.get(&config.audience))
+            .and_then(|resource| resource.get("roles")),
+        OidcRoleClaims::ClaimPointer(pointer) => claims.pointer(pointer),
+    };
+    let Some(value) = value else {
+        return Ok(BTreeSet::new());
+    };
+    let values = match value {
+        Value::Array(values) => values
+            .iter()
+            .map(|value| {
+                value.as_str().ok_or_else(|| {
+                    AuthError::InvalidClaims("role arrays must contain only strings".to_string())
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        Value::String(value) => value.split_ascii_whitespace().collect(),
+        _ => {
+            return Err(AuthError::InvalidClaims(
+                "role claim must be a string or an array of strings".to_string(),
+            ));
+        }
+    };
+    if values.len() > 256 {
+        return Err(AuthError::InvalidClaims(
+            "role claim contains more than 256 roles".to_string(),
+        ));
+    }
+    values
+        .into_iter()
+        .map(|role| {
+            let role = role.trim();
+            if role.is_empty() || role.len() > 256 || role.chars().any(char::is_control) {
+                Err(AuthError::InvalidClaims(
+                    "roles must be non-empty strings of at most 256 bytes".to_string(),
+                ))
+            } else {
+                Ok(role.to_string())
+            }
+        })
+        .collect()
+}
+
+fn required_string_claim<'a>(
+    claims: &'a Value,
+    pointer: &str,
+    label: &str,
+    max_bytes: usize,
+) -> Result<&'a str, AuthError> {
+    let value = claims
+        .pointer(pointer)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= max_bytes
+                && !value.chars().any(char::is_control)
+        })
+        .ok_or_else(|| {
+            AuthError::InvalidClaims(format!(
+                "{label} claim at {pointer:?} must be a non-empty string of at most {max_bytes} bytes"
+            ))
+        })?;
+    Ok(value)
+}
+
+fn optional_string_claim(
+    claims: &Value,
+    pointer: &str,
+    label: &str,
+    max_bytes: usize,
+) -> Result<Option<String>, AuthError> {
+    match claims.pointer(pointer) {
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => required_string_claim(claims, pointer, label, max_bytes)
+            .map(|value| Some(value.to_string())),
+    }
+}
+
+fn required_u64_claim(claims: &Value, pointer: &str, label: &str) -> Result<u64, AuthError> {
+    claims
+        .pointer(pointer)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            AuthError::InvalidClaims(format!(
+                "{label} claim at {pointer:?} must be a non-negative integer"
+            ))
+        })
 }
 
 fn validate_token_times(iat: u64, exp: u64, now: u64) -> Result<(), AuthError> {
@@ -358,12 +442,15 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn config() -> JwtConfig {
-        JwtConfig {
+    fn config() -> OidcConfig {
+        OidcConfig {
             issuer: "https://id.example/realms/skid".to_string(),
+            jwks_origin: "https://id.example".to_string(),
             audience: "skid-client-api".to_string(),
             required_role: "telemetry-read".to_string(),
-            tenant_claim: "tenant_id".to_string(),
+            tenant_pointer: "/tenant_id".to_string(),
+            role_claims: OidcRoleClaims::KeycloakResourceAccess,
+            agent_id_pointer: None,
         }
     }
 
@@ -381,13 +468,25 @@ mod tests {
     }
 
     #[test]
+    fn jwks_can_use_another_path_on_only_the_configured_origin() {
+        let config = config();
+        assert_eq!(
+            validated_jwks_uri(&config, "https://id.example/tenant/discovery/v2.0/keys").unwrap(),
+            "https://id.example/tenant/discovery/v2.0/keys"
+        );
+        assert!(validated_jwks_uri(&config, "https://keys.example/jwks").is_err());
+        assert!(validated_jwks_uri(&config, "http://id.example/jwks").is_err());
+        assert!(validated_jwks_uri(&config, "https://user@id.example/jwks").is_err());
+    }
+
+    #[test]
     fn principal_requires_audience_scoped_role_and_tenant() {
         let tenant = uuid::Uuid::new_v4();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let claims: AccessClaims = serde_json::from_value(json!({
+        let claims = json!({
             "sub": "user-1",
             "iat": now,
             "exp": now + 300,
@@ -397,12 +496,11 @@ mod tests {
             "resource_access": {
                 "skid-client-api": { "roles": ["telemetry-read"] }
             }
-        }))
-        .unwrap();
+        });
         let principal = principal_from_claims(&config(), claims, "telemetry-read").unwrap();
 
         assert_eq!(principal.tenant_id.as_uuid(), tenant);
-        assert_eq!(principal.client_id, "skid-web");
+        assert_eq!(principal.agent_identity.as_deref(), Some("skid-web"));
         assert!(principal.has_role("telemetry-read"));
     }
 
@@ -412,7 +510,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let claims: AccessClaims = serde_json::from_value(json!({
+        let claims = json!({
             "sub": "user-1",
             "iat": now,
             "exp": now + 300,
@@ -421,13 +519,90 @@ mod tests {
             "resource_access": {
                 "other-api": { "roles": ["telemetry-read"] }
             }
-        }))
-        .unwrap();
+        });
 
         assert!(matches!(
             principal_from_claims(&config(), claims, "telemetry-read"),
             Err(AuthError::MissingRole(_))
         ));
+    }
+
+    #[test]
+    fn generic_claim_profile_supports_nested_tenant_roles_and_agent_identity() {
+        let tenant = uuid::Uuid::new_v4();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let config = OidcConfig {
+            issuer: "https://accounts.example".to_string(),
+            jwks_origin: "https://accounts.example".to_string(),
+            audience: "skid-client-api".to_string(),
+            required_role: "telemetry-read".to_string(),
+            tenant_pointer: "/organization/id".to_string(),
+            role_claims: OidcRoleClaims::ClaimPointer(
+                "/https:~1~1monitor.example~1roles".to_string(),
+            ),
+            agent_id_pointer: Some("/appid".to_string()),
+        };
+        let claims = json!({
+            "sub": "user-1",
+            "iat": now,
+            "exp": now + 300,
+            "appid": "agent-from-provider",
+            "organization": { "id": tenant.to_string() },
+            "https://monitor.example/roles": ["telemetry-read", "telemetry-admin"]
+        });
+
+        let principal = principal_from_claims(&config, claims, "telemetry-read").unwrap();
+        assert_eq!(principal.tenant_id.as_uuid(), tenant);
+        assert_eq!(
+            principal.agent_identity.as_deref(),
+            Some("agent-from-provider")
+        );
+        assert!(principal.has_role("telemetry-admin"));
+    }
+
+    #[test]
+    fn generic_string_role_claim_accepts_oauth_scope_shape() {
+        let mut config = config();
+        config.role_claims = OidcRoleClaims::ClaimPointer("/scope".to_string());
+        let claims = json!({
+            "sub": "user-1",
+            "iat": 2_000_000_000_u64,
+            "exp": 2_000_000_300_u64,
+            "client_id": "agent-1",
+            "tenant_id": uuid::Uuid::new_v4().to_string(),
+            "scope": "openid telemetry-read profile"
+        });
+
+        assert!(
+            roles_from_claims(&config, &claims)
+                .unwrap()
+                .contains("telemetry-read")
+        );
+    }
+
+    #[test]
+    fn user_tokens_do_not_require_an_agent_identity_claim() {
+        let tenant = uuid::Uuid::new_v4();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let claims = json!({
+            "sub": "user-without-client-id",
+            "iat": now,
+            "exp": now + 300,
+            "tenant_id": tenant.to_string(),
+            "resource_access": {
+                "skid-client-api": { "roles": ["telemetry-read"] }
+            }
+        });
+
+        let principal = principal_from_claims(&config(), claims, "telemetry-read").unwrap();
+        assert!(principal.agent_identity.is_none());
+        assert!(principal.agent_id().is_err());
     }
 
     #[test]
