@@ -7,10 +7,11 @@ use crate::components::primitives::{alert_color, table_header};
 use crate::config;
 use crate::edge::{EdgeSignalDecoration, EdgeSignalDecorations, edge_key};
 use crate::model::{AlertSeverity, NodeSummary};
+use crate::platform::INGRESS_UI;
 use crate::utils::{format_duration, shorten};
 use eframe::egui::{self, Color32, RichText, Stroke};
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Instant;
+use web_time::Instant;
 
 #[derive(Default)]
 pub(crate) struct AddAgentDraft {
@@ -143,14 +144,14 @@ fn listener_bar(
     };
 
     ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("Ingress listeners").color(config::TABLE_HEADER_COLOR));
+        ui.label(RichText::new(INGRESS_UI.title).color(config::TABLE_HEADER_COLOR));
         ui.add(
             egui::TextEdit::singleline(&mut draft.addr)
                 .desired_width(input_width)
-                .hint_text("127.0.0.1:9000"),
+                .hint_text(INGRESS_UI.hint),
         );
         let can_add = !draft.addr.trim().is_empty();
-        let add = ui.add_enabled(can_add, egui::Button::new("Bind"));
+        let add = ui.add_enabled(can_add, egui::Button::new(INGRESS_UI.add));
         if add.clicked() {
             *action = Some(AgentOverviewAction::SaveListener(draft.addr.clone()));
         }
@@ -161,9 +162,7 @@ fn listener_bar(
 
     ui.horizontal_wrapped(|ui| {
         if listeners.is_empty() {
-            ui.label(
-                RichText::new("no active ingress listeners").color(config::PLACEHOLDER_TEXT_COLOR),
-            );
+            ui.label(RichText::new(INGRESS_UI.empty).color(config::PLACEHOLDER_TEXT_COLOR));
             return;
         }
 
@@ -205,7 +204,9 @@ fn listener_chip(
         } else if ui
             .add_sized(
                 [remove_width, button_height],
-                egui::Button::new(RichText::new("Unbind").color(config::STATUS_ERROR_COLOR)),
+                egui::Button::new(
+                    RichText::new(INGRESS_UI.remove).color(config::STATUS_ERROR_COLOR),
+                ),
             )
             .clicked()
         {

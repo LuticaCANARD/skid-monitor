@@ -6,7 +6,7 @@ use crate::model::AlertSeverity;
 use crate::model::NodeSummary;
 use crate::utils::{format_duration, shorten};
 use eframe::egui::{self, Color32, RichText};
-use std::time::Instant;
+use web_time::Instant;
 
 pub(crate) fn show(
     ui: &mut egui::Ui,

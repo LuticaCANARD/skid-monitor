@@ -5,7 +5,7 @@ use crate::model::{MetricSample, NodeSummary};
 use crate::signal::metric_samples;
 use crate::utils::push_capped;
 use skid_protocol::protocol::Signal;
-use std::time::Instant;
+use web_time::Instant;
 
 impl DashboardState {
     pub(in crate::state) fn ingest_signal(&mut self, listener: &str, signal: Signal) {

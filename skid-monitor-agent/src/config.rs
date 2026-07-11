@@ -32,6 +32,7 @@ pub struct ReceiversConfig {
     pub self_observation: SelfObservationReceiverConfig,
     pub device: DeviceReceiverConfig,
     pub otlp: OtlpReceiverConfig,
+    pub database_logs: DatabaseLogsReceiverConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -59,6 +60,41 @@ pub struct OtlpReceiverConfig {
     pub enabled: bool,
     #[serde(default = "default_otlp_grpc_addr")]
     pub grpc_addr: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DatabaseLogsReceiverConfig {
+    pub enabled: bool,
+    #[serde(default = "default_database_log_poll_interval_millis")]
+    pub poll_interval_millis: u64,
+    pub start_at: LogStartPosition,
+    #[serde(default = "default_database_log_max_line_bytes")]
+    pub max_line_bytes: usize,
+    #[serde(default = "default_database_log_max_read_bytes")]
+    pub max_read_bytes: usize,
+    pub sources: Vec<DatabaseLogSourceConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DatabaseLogSourceConfig {
+    pub system: String,
+    pub path: PathBuf,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub service_name: Option<String>,
+    #[serde(default)]
+    pub instance: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LogStartPosition {
+    Beginning,
+    #[default]
+    End,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -139,6 +175,16 @@ impl AgentConfig {
         if self.receivers.self_observation.interval_secs == 0 {
             self.receivers.self_observation.interval_secs = DEFAULT_CYCLE_INTERVAL_SECS;
         }
+        if self.receivers.database_logs.poll_interval_millis == 0 {
+            self.receivers.database_logs.poll_interval_millis =
+                default_database_log_poll_interval_millis();
+        }
+        if self.receivers.database_logs.max_line_bytes == 0 {
+            self.receivers.database_logs.max_line_bytes = default_database_log_max_line_bytes();
+        }
+        if self.receivers.database_logs.max_read_bytes == 0 {
+            self.receivers.database_logs.max_read_bytes = default_database_log_max_read_bytes();
+        }
     }
 
     fn validate(&self) -> Result<(), ConfigError> {
@@ -158,6 +204,34 @@ impl AgentConfig {
             {
                 return Err(ConfigError::Validate(format!(
                     "exporter {name:?} has an empty OTLP endpoint"
+                )));
+            }
+        }
+
+        if self.receivers.database_logs.enabled && self.receivers.database_logs.sources.is_empty() {
+            return Err(ConfigError::Validate(
+                "database_logs receiver is enabled but has no sources".to_string(),
+            ));
+        }
+        if self.receivers.database_logs.max_line_bytes > 16 * 1024 * 1024 {
+            return Err(ConfigError::Validate(
+                "database_logs max_line_bytes must not exceed 16 MiB".to_string(),
+            ));
+        }
+        if self.receivers.database_logs.max_read_bytes > 64 * 1024 * 1024 {
+            return Err(ConfigError::Validate(
+                "database_logs max_read_bytes must not exceed 64 MiB".to_string(),
+            ));
+        }
+        for (index, source) in self.receivers.database_logs.sources.iter().enumerate() {
+            if source.system.trim().is_empty() {
+                return Err(ConfigError::Validate(format!(
+                    "database_logs source {index} has an empty system"
+                )));
+            }
+            if source.path.as_os_str().is_empty() {
+                return Err(ConfigError::Validate(format!(
+                    "database_logs source {index} has an empty path"
                 )));
             }
         }
@@ -183,6 +257,7 @@ impl Default for ReceiversConfig {
             self_observation: SelfObservationReceiverConfig::default(),
             device: DeviceReceiverConfig::default(),
             otlp: OtlpReceiverConfig::default(),
+            database_logs: DatabaseLogsReceiverConfig::default(),
         }
     }
 }
@@ -245,6 +320,19 @@ impl Default for OtlpReceiverConfig {
     }
 }
 
+impl Default for DatabaseLogsReceiverConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            poll_interval_millis: default_database_log_poll_interval_millis(),
+            start_at: LogStartPosition::End,
+            max_line_bytes: default_database_log_max_line_bytes(),
+            max_read_bytes: default_database_log_max_read_bytes(),
+            sources: Vec::new(),
+        }
+    }
+}
+
 impl Default for PipelinesConfig {
     fn default() -> Self {
         default_pipelines()
@@ -258,6 +346,7 @@ impl Default for PipelineConfig {
                 "self_observation".to_string(),
                 "device".to_string(),
                 "otlp".to_string(),
+                "database_logs".to_string(),
             ],
             processors: Vec::new(),
             exporters: vec!["skid".to_string()],
@@ -293,7 +382,10 @@ fn validate_pipeline(
     }
 
     for receiver in &pipeline.receivers {
-        if !matches!(receiver.as_str(), "self_observation" | "device" | "otlp") {
+        if !matches!(
+            receiver.as_str(),
+            "self_observation" | "device" | "otlp" | "database_logs"
+        ) {
             return Err(ConfigError::Validate(format!(
                 "{signal} pipeline references unknown receiver {receiver:?}"
             )));
@@ -376,7 +468,20 @@ fn default_pipeline_receivers() -> Vec<String> {
         "self_observation".to_string(),
         "device".to_string(),
         "otlp".to_string(),
+        "database_logs".to_string(),
     ]
+}
+
+fn default_database_log_poll_interval_millis() -> u64 {
+    1_000
+}
+
+fn default_database_log_max_line_bytes() -> usize {
+    64 * 1024
+}
+
+fn default_database_log_max_read_bytes() -> usize {
+    1024 * 1024
 }
 
 fn default_pipeline_exporters() -> Vec<String> {
@@ -400,8 +505,16 @@ mod tests {
         config.validate().unwrap();
 
         assert!(config.receivers.self_observation.enabled);
+        assert_eq!(config.receivers.database_logs.sources.len(), 1);
         assert!(config.exporters.contains_key("skid"));
         assert_eq!(config.pipelines.metrics.exporters, ["skid", "debug"]);
+        assert!(
+            config
+                .pipelines
+                .logs
+                .receivers
+                .contains(&"database_logs".to_string())
+        );
     }
 
     #[test]

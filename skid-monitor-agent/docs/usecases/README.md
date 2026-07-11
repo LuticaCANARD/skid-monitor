@@ -85,3 +85,60 @@ SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 1. MVP: 받은 `Signal`을 그대로 `transport::send`로 forward한다.
 2. 다음 단계: blocking TCP send를 tokio I/O 또는 `spawn_blocking`으로 격리한다.
 3. Production: client-subscribe 모델 또는 multi-client fan-out을 별도 transport로 설계한다.
+
+## Use Case 5: Database 로그 파일을 OTLP Logs로 보낸다
+
+제품 경험: 운영자가 agent에 PostgreSQL, MySQL, Redis, Valkey 등의 로그 파일을 등록하면 새로 추가된
+로그 줄이 기존 logs pipeline을 통해 client 또는 외부 OTLP collector로 전달된다. 별도 DB 전송
+프로토콜은 사용하지 않으며 각 레코드에는 `db.system.name`, `db.namespace`, `log.file.path`가 붙는다.
+
+```json
+{
+  "receivers": {
+    "database_logs": {
+      "enabled": true,
+      "poll_interval_millis": 1000,
+      "start_at": "end",
+      "max_line_bytes": 65536,
+      "max_read_bytes": 1048576,
+      "sources": [
+        {
+          "system": "postgresql",
+          "path": "/var/log/postgresql/postgresql.log",
+          "namespace": "orders",
+          "service_name": "orders-postgresql",
+          "instance": "primary"
+        },
+        {
+          "system": "mysql",
+          "path": "/var/log/mysql/error.log"
+        },
+        {
+          "system": "redis",
+          "path": "/var/log/redis/redis-server.log"
+        },
+        {
+          "system": "valkey",
+          "path": "/var/log/valkey/valkey.log"
+        }
+      ]
+    }
+  },
+  "pipelines": {
+    "logs": {
+      "receivers": ["self_observation", "device", "otlp", "database_logs"],
+      "exporters": ["skid"]
+    }
+  }
+}
+```
+
+`start_at`의 기본값은 `end`다. agent 시작 전에 쌓인 전체 파일을 backfill하려면 `beginning`을
+사용한다. offset은 현재 process 안에서 유지되며 truncate와 일반적인 파일 교체 rotation을 감지한다.
+DB 설정에서 password나 bind parameter를 로그에 남기지 않도록 redaction 정책을 먼저 적용해야 한다.
+
+개발 step:
+
+1. MVP: 설정 파일 tail, rotation/truncate, 부분 줄, 크기 제한과 OTLP Logs 변환을 제공한다.
+2. 다음 단계: DB별 multiline parser와 원본 timestamp parser를 선택적으로 추가한다.
+3. Production: restart-safe offset checkpoint, backpressure/drop metric, secret redaction processor를 추가한다.

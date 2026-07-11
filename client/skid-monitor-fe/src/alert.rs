@@ -36,6 +36,7 @@ impl AlertStore {
         self.resolve(&format!("receiver.error:{listener}"), detail.to_string())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn observe_extension_error(&mut self, error: &str) -> Option<AlertChange> {
         self.fire(
             "extension.error".to_string(),

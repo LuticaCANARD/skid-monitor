@@ -4,10 +4,11 @@
 //! `skid_protocol` 프로토콜로 client에 전송하는 수집 agent.
 //!
 //! 현재는 server 자신을 OpenTelemetry SDK로 자체 계측하여 metrics/traces/logs를 생성하고,
-//! device/OTLP receiver 신호와 함께 agent pipeline으로 내보낸다.
+//! device/OTLP receiver 신호 및 database log 파일과 함께 agent pipeline으로 내보낸다.
 
 mod collector;
 mod config;
+mod database_logs;
 mod device_socket;
 mod exporters;
 mod otlp_receiver;
@@ -56,6 +57,14 @@ async fn main() {
             if let Err(err) = otlp_receiver::serve(addr, pipeline).await {
                 warn!(%err, "OTLP gRPC receiver stopped");
             }
+        });
+    }
+
+    if config.receivers.database_logs.enabled {
+        let receiver_config = config.receivers.database_logs.clone();
+        let pipeline = pipeline.clone();
+        tokio::spawn(async move {
+            database_logs::serve(receiver_config, pipeline).await;
         });
     }
 

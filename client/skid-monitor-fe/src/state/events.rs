@@ -2,7 +2,7 @@ use super::DashboardState;
 use crate::config;
 use crate::model::{AlertChange, AlertSeverity, AlertStatus, AlertTransition, EventRow};
 use crate::utils::{format_event_time, push_capped};
-use std::time::SystemTime;
+use web_time::SystemTime;
 
 impl DashboardState {
     pub(in crate::state) fn push_event(

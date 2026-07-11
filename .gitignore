@@ -1,5 +1,6 @@
 # Rust 빌드 산출물 (workspace 루트에 단일 target/)
 /target/
+/client/skid-monitor-fe/dist/
 
 # .NET 빌드 산출물
 **/bin/

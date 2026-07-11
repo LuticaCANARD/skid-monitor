@@ -1,10 +1,14 @@
 use eframe::egui::{Color32, Vec2};
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const APP_ID: &str = "skid-monitor-control-room";
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const WINDOW_TITLE: &str = "Skid Monitor Control Room";
 pub(crate) const APP_TITLE: &str = "Skid Monitor";
 pub(crate) const APP_SUBTITLE: &str = "control room";
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const WINDOW_INITIAL_SIZE: [f32; 2] = [1180.0, 760.0];
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const WINDOW_MIN_SIZE: [f32; 2] = [280.0, 640.0];
 
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
@@ -35,7 +39,9 @@ pub(crate) const DISPLAY_ENV: &str = "DISPLAY";
 pub(crate) const MAX_EVENTS: usize = 256;
 pub(crate) const MAX_METRICS: usize = 512;
 pub(crate) const MAX_HISTORY_POINTS: usize = 180;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const STATE_DB_PATH_ENV: &str = "SKID_MONITOR_FE_STATE_DB";
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const STATE_DB_DEFAULT_FILE: &str = "control-room.sqlite3";
 
 pub(crate) const CONTENT_SIDE_MARGIN_MIN: f32 = 12.0;

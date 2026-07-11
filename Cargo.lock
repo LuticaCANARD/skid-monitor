@@ -1070,9 +1070,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3068,17 +3070,26 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "image",
+ "js-sys",
  "libc",
+ "log",
+ "serde",
+ "serde_json",
  "skid-monitor-client",
  "skid-protocol",
  "sqlx",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
 ]
 
 [[package]]
 name = "skid-protocol"
 version = "0.1.0"
 dependencies = [
+ "getrandom",
  "opentelemetry-proto",
  "serde",
  "serde_json",

@@ -1,4 +1,4 @@
-use std::time::Instant;
+use web_time::Instant;
 
 #[derive(Clone)]
 pub(crate) struct NodeSummary {

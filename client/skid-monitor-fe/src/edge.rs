@@ -1,8 +1,9 @@
 use crate::model::{AlertSeverity, NodeSummary};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use web_time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct PersistedEdgeState {
     pub(crate) key: String,
     pub(crate) endpoint: String,
@@ -187,6 +188,7 @@ pub(crate) fn edge_key(endpoint: &str, node: &str) -> String {
     format!("{endpoint}|{node}")
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn severity_name(severity: AlertSeverity) -> &'static str {
     match severity {
         AlertSeverity::Warning => "warning",
@@ -194,6 +196,7 @@ pub(crate) fn severity_name(severity: AlertSeverity) -> &'static str {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn severity_from_name(value: &str) -> Option<AlertSeverity> {
     match value {
         "warning" => Some(AlertSeverity::Warning),

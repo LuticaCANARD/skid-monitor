@@ -11,6 +11,22 @@
     "otlp": {
       "enabled": false,
       "grpc_addr": "127.0.0.1:4317"
+    },
+    "database_logs": {
+      "enabled": false,
+      "poll_interval_millis": 1000,
+      "start_at": "end",
+      "max_line_bytes": 65536,
+      "max_read_bytes": 1048576,
+      "sources": [
+        {
+          "system": "postgresql",
+          "path": "/var/log/postgresql/postgresql.log",
+          "namespace": "orders",
+          "service_name": "orders-postgresql",
+          "instance": "primary"
+        }
+      ]
     }
   },
   "processors": {
@@ -40,7 +56,7 @@
       "exporters": ["skid"]
     },
     "logs": {
-      "receivers": ["self_observation", "device", "otlp"],
+      "receivers": ["self_observation", "device", "otlp", "database_logs"],
       "processors": ["batch"],
       "exporters": ["skid"]
     }

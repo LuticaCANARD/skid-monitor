@@ -13,5 +13,11 @@ path = "src/lib.rs"
 serde = { workspace = true }
 serde_json.workspace = true
 
-# server-client 경계는 OTLP export request 타입을 공유한다.
+# server-client 경계는 OTLP export request 타입을 공유한다. 브라우저는
+# generated message model만 사용하고 native 빌드만 tonic transport를 포함한다.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 opentelemetry-proto.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic-messages", "with-serde", "trace", "metrics", "logs"] }

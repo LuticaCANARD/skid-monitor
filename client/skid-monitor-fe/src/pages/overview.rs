@@ -8,6 +8,7 @@ use crate::components::{
     layout::PanelLimits,
 };
 use crate::config;
+use crate::platform::INGRESS_UI;
 use crate::state::DashboardState;
 use eframe::egui;
 
@@ -91,7 +92,7 @@ impl OverviewState {
         self.listener_draft.clear();
         self.pending_remove_listener = None;
         self.add_agent_notice = Some(AddAgentNotice {
-            message: "listener bind requested".to_string(),
+            message: INGRESS_UI.add_requested.to_string(),
             is_error: false,
         });
     }
@@ -109,7 +110,7 @@ impl OverviewState {
     pub(crate) fn removed_listener(&mut self) {
         self.pending_remove_listener = None;
         self.add_agent_notice = Some(AddAgentNotice {
-            message: "listener removal requested".to_string(),
+            message: INGRESS_UI.remove_requested.to_string(),
             is_error: false,
         });
     }

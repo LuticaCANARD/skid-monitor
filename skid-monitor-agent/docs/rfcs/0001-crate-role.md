@@ -20,6 +20,7 @@ fan-out 한다.
 - Linux host/system metric을 `/proc` 계열 interface에서 읽어 `skid-protocol`의 metric helper로 OTLP
   request에 합친다.
 - macOS host metric을 별도 native sampler로 수집하고 `skid_monitor.source=macos`로 분리한다.
+- 설정된 database log 파일을 tail하고 DB metadata가 포함된 OTLP Logs로 변환한다.
 - Windows native host metric은 planned target으로 두며, 구현 시 PDH/WMI/CIM/ETW/Event Log 계열
   adapter와 별도 source 계약을 추가한다.
 - `SKID_MONITOR_DEVICE_LISTEN_ADDR`에서 device ingress를 연다.
@@ -33,8 +34,8 @@ fan-out 한다.
 ## Runtime Shape
 
 `main.rs`는 config를 읽고 telemetry guard를 초기화한 뒤 self-observation interval, device socket task,
-OTLP gRPC receiver task를 설정에 따라 함께 돌린다. self-observation은 OS별 `SystemSampler` branch에서
-host metric을 수집한다. 각 receiver는 `SignalPipeline`으로 신호를 넘기고, pipeline은 signal type별
+OTLP gRPC receiver와 database log receiver task를 설정에 따라 함께 돌린다. self-observation은 OS별
+`SystemSampler` branch에서 host metric을 수집한다. 각 receiver는 `SignalPipeline`으로 신호를 넘기고, pipeline은 signal type별
 receiver filter, processor, exporter fan-out을 적용한다. device ingress는 tokio `TcpListener`, OTLP
 ingress는 tonic gRPC server를 쓴다. `skid_client` exporter의 client forward path는 현재 blocking TCP
 send다.

@@ -12,6 +12,7 @@ pub enum ReceiverKind {
     SelfObservation,
     Device,
     Otlp,
+    DatabaseLogs,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +98,7 @@ impl ReceiverKind {
             ReceiverKind::SelfObservation => "self_observation",
             ReceiverKind::Device => "device",
             ReceiverKind::Otlp => "otlp",
+            ReceiverKind::DatabaseLogs => "database_logs",
         }
     }
 }

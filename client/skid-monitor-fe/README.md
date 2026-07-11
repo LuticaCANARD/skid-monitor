@@ -1,6 +1,6 @@
 # Skid Monitor FE
 
-Native egui control-room frontend for Skid Monitor.
+Native and WebAssembly egui control-room frontend for Skid Monitor.
 
 It listens on the same TCP signal endpoint as `skid-monitor-client` and renders
 incoming OTLP metrics, traces, and logs as an operator-focused dashboard.
@@ -48,6 +48,35 @@ Start an agent in another terminal with the same address:
 ```sh
 SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 ```
+
+## Browser frontend
+
+The browser build reuses the same pages, components, models, and dashboard
+state as the native frontend. Platform adapters provide WebGPU rendering,
+WebSocket ingress, and browser `localStorage` persistence while the native
+build keeps its TCP listener and SQLite database.
+
+Install the WASM target and Trunk, then serve the frontend from this directory:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install trunk
+cd client/skid-monitor-fe
+trunk serve
+```
+
+Open <http://127.0.0.1:8080>. Add a `ws://` or `wss://` endpoint from the
+Ingress connections control, or preconfigure one with the query string:
+
+```text
+http://127.0.0.1:8080/?ingress=ws://127.0.0.1:9100/signals
+```
+
+Browsers cannot bind the agent's raw TCP listener. The WebSocket endpoint must
+bridge the existing signal transport and send either a JSON-serialized
+`skid_protocol::Signal` text message or the same JSON bytes as an ArrayBuffer.
+The native application continues to accept the existing length-prefixed TCP
+frames without any protocol change.
 
 For multiple node agents, open one frontend listener per node-facing endpoint.
 `SKID_MONITOR_CLIENT_ADDRS` is only read by the frontend/client side; each agent

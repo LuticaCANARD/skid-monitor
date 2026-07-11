@@ -1,6 +1,6 @@
 use crate::config;
 use std::collections::VecDeque;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use web_time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) fn stabilize_linux_graphics_env() {
@@ -30,7 +30,10 @@ pub(crate) fn stabilize_linux_graphics_env() {
     }
 }
 
-#[cfg(any(not(target_os = "linux"), feature = "high-spec"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    any(not(target_os = "linux"), feature = "high-spec")
+))]
 pub(crate) fn stabilize_linux_graphics_env() {}
 
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]

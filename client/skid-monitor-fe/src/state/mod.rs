@@ -7,10 +7,9 @@ mod persistence;
 use crate::alert::AlertStore;
 use crate::edge::EdgeSignalDecorations;
 use crate::model::{EventRow, MetricSample, NodeSummary, SignalCounters, Status};
+use crate::platform::IngressControl;
 use crate::storage::StateStorage;
-use skid_monitor_client::receiver_loop::ReceiverControl;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::mpsc::Sender;
 
 pub(crate) struct DashboardState {
     pub(in crate::state) status: Status,
@@ -27,5 +26,5 @@ pub(crate) struct DashboardState {
     pub(in crate::state) listeners: BTreeSet<String>,
     /// Lets the dashboard ask the running receiver loop to manage client
     /// ingress listeners at runtime.
-    pub(in crate::state) listener_ctrl: Option<Sender<ReceiverControl>>,
+    pub(in crate::state) ingress_control: Option<IngressControl>,
 }

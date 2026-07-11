@@ -2,12 +2,11 @@ use super::DashboardState;
 use crate::alert::AlertStore;
 use crate::edge::{EdgeSignalDecorations, edge_key};
 use crate::model::{NodeSummary, SignalCounters, Status};
+use crate::platform::{Ingress, IngressControl, IngressMessage};
 use crate::storage::StateStorage;
-use skid_monitor_client::receiver_loop::{ReceiverControl, ReceiverMessage};
 use skid_protocol::protocol::Signal;
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::mpsc::{Receiver, Sender};
-use std::time::Instant;
+use web_time::Instant;
 
 impl DashboardState {
     pub(crate) fn new() -> Self {
@@ -32,7 +31,7 @@ impl DashboardState {
             alerts_enabled: true,
             storage: storage_init.storage,
             listeners: Default::default(),
-            listener_ctrl: None,
+            ingress_control: None,
         };
 
         if let Some(message) = storage_init.message {
@@ -44,21 +43,22 @@ impl DashboardState {
 
     /// Wires up the channel used to ask the running receiver loop to manage
     /// client ingress listeners at runtime.
-    pub(crate) fn set_listener_control(&mut self, listener_ctrl: Sender<ReceiverControl>) {
-        self.listener_ctrl = Some(listener_ctrl);
+    pub(crate) fn set_ingress_control(&mut self, ingress_control: IngressControl) {
+        self.ingress_control = Some(ingress_control);
     }
 
-    pub(crate) fn drain_messages(&mut self, rx: &Receiver<ReceiverMessage>) {
-        while let Ok(message) = rx.try_recv() {
+    pub(crate) fn drain_ingress(&mut self, ingress: &mut Ingress) {
+        while let Some(message) = ingress.try_next() {
             match message {
-                ReceiverMessage::Listening(addrs) => self.observe_listening(addrs),
-                ReceiverMessage::Signal { listener, signal } => {
+                IngressMessage::Listening(addrs) => self.observe_listening(addrs),
+                IngressMessage::Signal { listener, signal } => {
                     self.observe_signal_message(listener, signal);
                 }
-                ReceiverMessage::Error { listener, error } => {
+                IngressMessage::Error { listener, error } => {
                     self.observe_receiver_error(listener.as_deref(), error);
                 }
-                ReceiverMessage::ExtensionError(error) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                IngressMessage::ExtensionError(error) => {
                     self.push_event("extension", error.clone());
                     if self.alerts_enabled {
                         let change = self.alerts.observe_extension_error(&error);
@@ -143,13 +143,14 @@ impl DashboardState {
             return Err(format!("listener {addr} is already active"));
         }
 
-        let Some(listener_ctrl) = &self.listener_ctrl else {
-            return Err("receiver control channel is unavailable".to_string());
+        let Some(ingress_control) = &self.ingress_control else {
+            return Err("ingress control is unavailable".to_string());
         };
-        listener_ctrl
-            .send(ReceiverControl::AddListener(addr.to_string()))
-            .map_err(|err| format!("failed to request listener bind: {err}"))?;
-        self.push_event("receiver", format!("requested listener bind on {addr}"));
+        ingress_control.add(addr.to_string())?;
+        self.push_event(
+            "receiver",
+            format!("requested ingress activation for {addr}"),
+        );
         Ok(())
     }
 
@@ -162,13 +163,11 @@ impl DashboardState {
             return Err(format!("listener {addr} is not active"));
         }
 
-        let Some(listener_ctrl) = &self.listener_ctrl else {
-            return Err("receiver control channel is unavailable".to_string());
+        let Some(ingress_control) = &self.ingress_control else {
+            return Err("ingress control is unavailable".to_string());
         };
-        listener_ctrl
-            .send(ReceiverControl::RemoveListener(addr.to_string()))
-            .map_err(|err| format!("failed to request listener removal: {err}"))?;
-        self.push_event("receiver", format!("requested listener removal for {addr}"));
+        ingress_control.remove(addr.to_string())?;
+        self.push_event("receiver", format!("requested ingress removal for {addr}"));
         Ok(())
     }
 
@@ -234,6 +233,7 @@ fn listener_event_message(addrs: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use skid_monitor_client::receiver_loop::ReceiverControl;
     use std::sync::mpsc;
 
     fn empty_state() -> DashboardState {
@@ -250,7 +250,7 @@ mod tests {
             alerts_enabled: true,
             storage: None,
             listeners: Default::default(),
-            listener_ctrl: None,
+            ingress_control: None,
         }
     }
 
@@ -258,7 +258,7 @@ mod tests {
     fn registering_agent_does_not_bind_a_listener_implicitly() {
         let (tx, rx) = mpsc::channel();
         let mut state = empty_state();
-        state.set_listener_control(tx);
+        state.set_ingress_control(IngressControl::from_sender(tx));
 
         state
             .register_agent("127.0.0.1:9300", "agent-a", "skid-monitor-agent")
@@ -272,7 +272,7 @@ mod tests {
     fn listener_bind_is_an_explicit_receiver_control_request() {
         let (tx, rx) = mpsc::channel();
         let mut state = empty_state();
-        state.set_listener_control(tx);
+        state.set_ingress_control(IngressControl::from_sender(tx));
 
         state.add_listener("127.0.0.1:9300").unwrap();
 

@@ -1,8 +1,15 @@
+#[cfg(not(target_arch = "wasm32"))]
 mod command;
+#[cfg(not(target_arch = "wasm32"))]
 mod db;
+#[cfg(not(target_arch = "wasm32"))]
 mod path;
+#[cfg(target_arch = "wasm32")]
+mod web;
+#[cfg(not(target_arch = "wasm32"))]
 mod worker;
 
+#[cfg(not(target_arch = "wasm32"))]
 use command::StorageCommand;
 
 #[cfg(test)]
@@ -10,10 +17,13 @@ mod tests;
 
 use crate::edge::PersistedEdgeState;
 use crate::model::{AlertChange, AlertSeverity, AlertStatus, AlertTransition};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc::{self, Sender};
+#[cfg(not(target_arch = "wasm32"))]
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use web_time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[cfg(not(target_arch = "wasm32"))]
 const STORAGE_INIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(crate) struct StorageInit {
@@ -24,10 +34,14 @@ pub(crate) struct StorageInit {
 
 #[derive(Clone)]
 pub(crate) struct StateStorage {
+    #[cfg(not(target_arch = "wasm32"))]
     tx: Sender<StorageCommand>,
+    #[cfg(target_arch = "wasm32")]
+    browser: web::BrowserStorage,
 }
 
 impl StateStorage {
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start() -> StorageInit {
         let path = path::state_db_path();
         let label = path.display().to_string();
@@ -54,18 +68,43 @@ impl StateStorage {
         }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn start() -> StorageInit {
+        match web::BrowserStorage::open() {
+            Ok((browser, restored_edges)) => StorageInit {
+                storage: Some(Self { browser }),
+                restored_edges,
+                message: Some("browser state storage ready".to_string()),
+            },
+            Err(error) => StorageInit {
+                storage: None,
+                restored_edges: Vec::new(),
+                message: Some(format!("browser state storage disabled: {error}")),
+            },
+        }
+    }
+
     pub(crate) fn persist_edge(&self, edge: &PersistedEdgeState) {
+        #[cfg(not(target_arch = "wasm32"))]
         let _ = self.tx.send(StorageCommand::UpsertEdge(edge.clone()));
+        #[cfg(target_arch = "wasm32")]
+        self.browser.persist_edge(edge);
     }
 
     pub(crate) fn delete_edge(&self, key: &str) {
+        #[cfg(not(target_arch = "wasm32"))]
         let _ = self.tx.send(StorageCommand::DeleteEdge(key.to_string()));
+        #[cfg(target_arch = "wasm32")]
+        self.browser.delete_edge(key);
     }
 
     pub(crate) fn persist_alert(&self, change: &AlertChange) {
+        #[cfg(not(target_arch = "wasm32"))]
         let _ = self
             .tx
             .send(StorageCommand::RecordAlert(AlertRecord::from(change)));
+        #[cfg(target_arch = "wasm32")]
+        self.browser.persist_alert(&AlertRecord::from(change));
     }
 }
 

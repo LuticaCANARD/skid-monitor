@@ -3,6 +3,7 @@ use crate::components::primitives::{
 };
 use crate::config;
 use crate::model::{AlertSummary, OperationalSummary, Status};
+use crate::platform::STORAGE_TOOLTIP;
 use eframe::egui::{self, Color32, RichText};
 
 pub(crate) fn show(
@@ -173,7 +174,7 @@ fn summary_strip(ui: &mut egui::Ui, summary: OperationalSummary) {
             (
                 "state saved",
                 config::STATUS_LISTENING_COLOR,
-                "SQLite state persistence is active",
+                STORAGE_TOOLTIP,
             )
         } else {
             (
