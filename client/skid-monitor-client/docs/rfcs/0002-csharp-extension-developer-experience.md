@@ -103,7 +103,7 @@ dotnet build client/skid-monitor-client/bindings/dotnet/examples/Skid.Monitor.Cl
 
 SKID_MONITOR_DOTNET_EXTENSIONS=./client/skid-monitor-client/bindings/dotnet/examples/Skid.Monitor.Client.SampleExtension/bin/Debug/netstandard2.1/Skid.Monitor.Client.SampleExtension.dll \
 SKID_MONITOR_EXTENSION_HOST="dotnet run --project client/skid-monitor-client/bindings/dotnet/Skid.Monitor.Client.ExtensionHost/Skid.Monitor.Client.ExtensionHost.csproj" \
-cargo run -p skid-monitor-client
+cargo run -p skid-monitor-fe
 ```
 
 extension은 다음 원칙을 따른다.

@@ -42,7 +42,7 @@ host에서는 각 OS의 서비스 관리자와 package 형식을 따른다.
 host/system 신호가 즉시 console에 보인다.
 
 ```sh
-SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-client
+SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-fe
 SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 ```
 

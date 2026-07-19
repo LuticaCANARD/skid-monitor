@@ -8,10 +8,20 @@ Skid Monitor의 구조적 결정과 운영 계약을 기록한다.
 repository는 조사와 설계의 source로만 취급하고, 채택할 기능은 먼저 RFC에 기록한다. 실제 구현은 이
 repository 안에서만 진행한다.
 
-## Index
+## Status 기준
 
-Status 범례: Draft = 설계 합의 중인 forward-looking 문서로 코드를 권위로 삼지 않으며 구현 정합
-검증 대상이 아니다. Accepted = 설계가 고정된 문서. Superseded = 후속 RFC로 대체된 문서.
+| Status | 의미 |
+| --- | --- |
+| Draft | 의견 수렴 중이며 구현 기준이 아니다. 이미 존재하는 code는 별도 implementation checklist로 표시한다. |
+| Accepted | 구현이 따라야 하는 결정으로 채택됐다. 구현 완료를 뜻하지 않는다. |
+| Implemented | 채택된 결정의 필수 범위가 code와 test에 반영됐다. |
+| Superseded | 다른 RFC로 대체됐다. 대체 RFC를 명시해야 한다. |
+| Rejected | 검토했지만 채택하지 않았다. |
+
+RFC status와 제품 기능 상태는 다르다. 제품의 Stable/Experimental/Prototype/Planned 상태는
+[Feature Status](../feature-status.md)가 정준 출처다.
+
+## Index
 
 | RFC | Status | Title | Scope |
 | --- | --- | --- | --- |
