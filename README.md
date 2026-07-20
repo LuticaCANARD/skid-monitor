@@ -84,7 +84,7 @@ terminal에서 `Ctrl-C`를 누른다.
 | Database log receiver | Experimental | tail, truncate/rotation, partial/oversized line tests |
 | PostgreSQL/OIDC Cloud mode | Experimental | split ingress/API, cursor replay, tenant RLS; 외부 DB 필요 |
 | Edge collection | Prototype | compact wire adapter와 deterministic mock sender만 구현 |
-| Alert/character presenter | Prototype | 고정 rule과 2D placeholder; VRM loader 없음 |
+| Alert/character presenter | Prototype | 고정 rule, 사용자 PNG/JPEG와 상태별 action; native high-spec은 VRM 0.x/1.0 정적 3D 표시 |
 | File transfer | Planned | root availability/count/bytes metadata만 전송 |
 | Compute routing | Prototype | logical CPU와 placeholder score만 전송; 실행 기능 없음 |
 | Windows sampler / Quantum adapter | Planned | RFC·enum 수준이며 runtime adapter 없음 |
@@ -119,7 +119,7 @@ restart-safe sequence allocator를 사용하지만 역시 payload spool은 아�
   compute input을 싣지 않는다.
 - file node는 allowlist 밖을 읽거나 upload/write/delete를 제공하지 않는다.
 - compute advisor는 remote executor나 scheduler가 아니다.
-- VRM, media provider, quantum adapter 문서는 구현 완료를 뜻하지 않는다.
+- VRM expression/SpringBone/VRMA, media provider, quantum adapter 문서는 구현 완료를 뜻하지 않는다.
 
 ## 문서
 
@@ -141,6 +141,7 @@ restart-safe sequence allocator를 사용하지만 역시 payload spool은 아�
 
 ```sh
 cargo test --workspace
+cargo test -p skid-monitor-fe --lib --no-default-features --features high-spec
 
 TEST_DATABASE_URL='postgresql://...' \
   cargo test -p skid-monitor-server --test postgres_store -- --ignored

@@ -1,37 +1,54 @@
+mod model;
 mod state;
+#[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+mod vrm;
 
 use crate::alert::AlertStore;
 use crate::components::layout::{panel_body_height, panel_frame};
-use crate::model::{AlertSeverity, NodeSummary};
+use crate::model::{AvatarMotion, AvatarReactionProfile, NodeSummary};
 use eframe::egui::{self, Align2, Color32, FontId, RichText, Stroke};
+pub(crate) use model::AvatarModelCache;
 use state::AvatarAlertState;
+use std::time::Duration;
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+pub(crate) fn install_vrm_renderer(cc: &eframe::CreationContext<'_>) -> bool {
+    vrm::install(cc)
+}
+
+const MOTION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
+const PULSE_SCALE: f32 = 0.04;
+const BOUNCE_DISTANCE: f32 = 12.0;
+const SHAKE_DISTANCE: f32 = 6.0;
 
 pub(crate) struct AvatarPresenterInput {
     state: AvatarAlertState,
+    model_name: String,
     message: String,
+    motion: AvatarMotion,
     active_alert_count: usize,
 }
 
 impl AvatarPresenterInput {
-    pub(crate) fn for_node(nodes: &[&NodeSummary], alerts: &AlertStore) -> Self {
-        let severity = nodes
-            .first()
-            .and_then(|node| alerts.highest_for_node(&node.endpoint, &node.node));
-        let state = match severity {
-            Some(AlertSeverity::Critical) => AvatarAlertState::Urgent,
-            Some(AlertSeverity::Warning) => AvatarAlertState::Concerned,
-            None => AvatarAlertState::Idle,
-        };
-        let active_alert_count = alerts.summary().active_count;
-        let message = match state {
-            AvatarAlertState::Idle => "All systems look calm.".to_string(),
-            AvatarAlertState::Concerned => "A warning needs attention.".to_string(),
-            AvatarAlertState::Urgent => "Critical condition detected!".to_string(),
-        };
+    pub(crate) fn for_node(
+        nodes: &[&NodeSummary],
+        alerts: &AlertStore,
+        profile: &AvatarReactionProfile,
+    ) -> Self {
+        let node = nodes.first();
+        let severity =
+            node.and_then(|node| alerts.highest_for_presenter(&node.endpoint, &node.node));
+        let state = AvatarAlertState::from_severity(severity);
+        let action = profile.action_for(severity);
+        let active_alert_count = node
+            .map(|node| alerts.active_count_for_presenter(&node.endpoint, &node.node))
+            .unwrap_or(0);
 
         Self {
             state,
-            message,
+            model_name: profile.model_name.clone(),
+            message: action.message.clone(),
+            motion: action.motion,
             active_alert_count,
         }
     }
@@ -42,11 +59,40 @@ pub(crate) fn show(
     panel_width: f32,
     panel_height: f32,
     input: AvatarPresenterInput,
+    model: &AvatarModelCache,
 ) {
     panel_frame(ui, panel_width, panel_height, |ui, inner_size| {
         ui.horizontal(|ui| {
             ui.heading("Character");
             ui.label(RichText::new(input.state.label()).color(input.state.accent()));
+            ui.label(
+                RichText::new(input.motion.label())
+                    .small()
+                    .color(ui.visuals().weak_text_color()),
+            );
+            if model.loading() {
+                ui.spinner();
+                ui.label(
+                    RichText::new("loading model")
+                        .small()
+                        .color(ui.visuals().weak_text_color()),
+                );
+            } else if let Some(error) = model.error() {
+                ui.label(
+                    RichText::new("built-in fallback")
+                        .small()
+                        .color(input.state.accent()),
+                )
+                .on_hover_text(error);
+            } else if let Some(label) = model.loaded_label() {
+                ui.label(
+                    RichText::new(label)
+                        .small()
+                        .color(ui.visuals().weak_text_color()),
+                );
+            }
+            ui.add(egui::Label::new(&input.model_name).truncate())
+                .on_hover_text(&input.model_name);
         });
         ui.separator();
 
@@ -55,8 +101,73 @@ pub(crate) fn show(
             egui::vec2(inner_size.x, viewport_height),
             egui::Sense::hover(),
         );
-        paint_placeholder(ui.painter(), rect, &input);
+        let time = ui.input(|input| input.time);
+        if input.motion != AvatarMotion::Still {
+            ui.ctx().request_repaint_after(MOTION_FRAME_INTERVAL);
+        }
+        let painter = ui.painter().with_clip_rect(rect);
+        let character_rect = motion_rect(rect, input.motion, time);
+        #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+        if let Some(scene) = model.vrm_scene() {
+            vrm::paint(&painter, character_rect.shrink(12.0), scene.clone());
+        } else {
+            vrm::clear(&painter, character_rect);
+            if let Some(image) = model.image() {
+                paint_sprite(&painter, character_rect, image);
+            } else {
+                paint_placeholder(&painter, character_rect, &input);
+            }
+        }
+        #[cfg(not(all(not(target_arch = "wasm32"), feature = "high-spec")))]
+        if let Some(image) = model.image() {
+            paint_sprite(&painter, character_rect, image);
+        } else {
+            paint_placeholder(&painter, character_rect, &input);
+        }
+        paint_message(&painter, rect, &input);
     });
+}
+
+fn motion_rect(rect: egui::Rect, motion: AvatarMotion, time: f64) -> egui::Rect {
+    let seconds = time as f32;
+    match motion {
+        AvatarMotion::Still => rect,
+        AvatarMotion::Pulse => {
+            let scale = 1.0 + PULSE_SCALE * (seconds * std::f32::consts::TAU).sin();
+            egui::Rect::from_center_size(rect.center(), rect.size() * scale)
+        }
+        AvatarMotion::Bounce => {
+            let offset = -BOUNCE_DISTANCE * (seconds * std::f32::consts::TAU * 1.5).sin().abs();
+            rect.translate(egui::vec2(0.0, offset))
+        }
+        AvatarMotion::Shake => {
+            let offset = SHAKE_DISTANCE * (seconds * std::f32::consts::TAU * 8.0).sin();
+            rect.translate(egui::vec2(offset, 0.0))
+        }
+    }
+}
+
+fn paint_sprite(painter: &egui::Painter, bounds: egui::Rect, image: &model::AvatarModelImage) {
+    let rect = contain_rect(bounds.shrink(12.0), image.size());
+    painter.image(
+        image.texture_id(),
+        rect,
+        egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+        Color32::WHITE,
+    );
+}
+
+fn contain_rect(bounds: egui::Rect, source_size: egui::Vec2) -> egui::Rect {
+    if bounds.width() <= 0.0
+        || bounds.height() <= 0.0
+        || source_size.x <= 0.0
+        || source_size.y <= 0.0
+    {
+        return egui::Rect::from_center_size(bounds.center(), egui::Vec2::ZERO);
+    }
+
+    let scale = (bounds.width() / source_size.x).min(bounds.height() / source_size.y);
+    egui::Rect::from_center_size(bounds.center(), source_size * scale)
 }
 
 fn paint_placeholder(painter: &egui::Painter, rect: egui::Rect, input: &AvatarPresenterInput) {
@@ -122,10 +233,24 @@ fn paint_placeholder(painter: &egui::Painter, rect: egui::Rect, input: &AvatarPr
             );
         }
     }
+}
 
+fn paint_message(painter: &egui::Painter, rect: egui::Rect, input: &AvatarPresenterInput) {
+    let accent = input.state.accent();
+    let bubble_width = (rect.width() - 28.0).clamp(1.0, 310.0);
+    let message_galley = painter.layout(
+        input.message.clone(),
+        FontId::proportional(14.0),
+        Color32::WHITE,
+        (bubble_width - 24.0).max(1.0),
+    );
+    let available_height = (rect.height() - 28.0).max(1.0);
+    let bubble_height = (message_galley.size().y + 36.0)
+        .clamp(1.0, 112.0)
+        .min(available_height);
     let bubble = egui::Rect::from_min_size(
         egui::pos2(rect.left() + 14.0, rect.top() + 14.0),
-        egui::vec2((rect.width() - 28.0).min(310.0), 62.0),
+        egui::vec2(bubble_width, bubble_height),
     );
     painter.rect(
         bubble,
@@ -134,13 +259,17 @@ fn paint_placeholder(painter: &egui::Painter, rect: egui::Rect, input: &AvatarPr
         Stroke::new(1.0, accent),
         egui::StrokeKind::Inside,
     );
-    painter.text(
-        bubble.left_top() + egui::vec2(12.0, 10.0),
-        Align2::LEFT_TOP,
-        &input.message,
-        FontId::proportional(14.0),
-        Color32::WHITE,
+    let message_origin = bubble.left_top() + egui::vec2(12.0, 10.0);
+    let message_clip = egui::Rect::from_min_max(
+        message_origin,
+        egui::pos2(
+            (bubble.right() - 12.0).max(message_origin.x),
+            (bubble.bottom() - 24.0).max(message_origin.y),
+        ),
     );
+    painter
+        .with_clip_rect(message_clip)
+        .galley(message_origin, message_galley, Color32::WHITE);
     painter.text(
         bubble.left_bottom() + egui::vec2(12.0, -10.0),
         Align2::LEFT_BOTTOM,
@@ -156,9 +285,108 @@ mod tests {
 
     #[test]
     fn no_node_alert_maps_to_idle() {
-        let input = AvatarPresenterInput::for_node(&[], &AlertStore::default());
+        let profile = AvatarReactionProfile::default();
+        let input = AvatarPresenterInput::for_node(&[], &AlertStore::default(), &profile);
 
         assert_eq!(input.state, AvatarAlertState::Idle);
+        assert_eq!(input.model_name, "Skid");
+        assert_eq!(input.message, "All systems look calm.");
+        assert_eq!(input.motion, AvatarMotion::Still);
         assert_eq!(input.active_alert_count, 0);
+    }
+
+    #[test]
+    fn presenter_uses_the_configured_idle_reaction() {
+        let mut profile = AvatarReactionProfile {
+            model_name: "Operator Cat".to_string(),
+            ..AvatarReactionProfile::default()
+        };
+        profile.idle.message = "Watching the racks.".to_string();
+        profile.idle.motion = AvatarMotion::Bounce;
+
+        let input = AvatarPresenterInput::for_node(&[], &AlertStore::default(), &profile);
+
+        assert_eq!(input.model_name, "Operator Cat");
+        assert_eq!(input.message, "Watching the racks.");
+        assert_eq!(input.motion, AvatarMotion::Bounce);
+    }
+
+    #[test]
+    fn receiver_failure_uses_the_configured_critical_reaction() {
+        let mut alerts = AlertStore::default();
+        alerts.observe_receiver_error("127.0.0.1:9000", "listener failed");
+        let node = NodeSummary {
+            node: "agent-a".to_string(),
+            endpoint: "127.0.0.1:9000".to_string(),
+            source: "agent".to_string(),
+            service: "skid-monitor-agent".to_string(),
+            metric_points: 0,
+            spans: 0,
+            log_records: 0,
+            last_metric: String::new(),
+            last_value: String::new(),
+            last_seen: web_time::Instant::now(),
+        };
+        let mut profile = AvatarReactionProfile::default();
+        profile.critical.message = "The receiver is down.".to_string();
+        profile.critical.motion = AvatarMotion::Bounce;
+
+        let input = AvatarPresenterInput::for_node(&[&node], &alerts, &profile);
+
+        assert_eq!(input.state, AvatarAlertState::Urgent);
+        assert_eq!(input.message, "The receiver is down.");
+        assert_eq!(input.motion, AvatarMotion::Bounce);
+        assert_eq!(input.active_alert_count, 1);
+    }
+
+    #[test]
+    fn still_motion_does_not_change_the_character_rect() {
+        let rect = test_rect();
+
+        assert_eq!(motion_rect(rect, AvatarMotion::Still, 123.0), rect);
+    }
+
+    #[test]
+    fn pulse_motion_scales_around_the_center() {
+        let rect = test_rect();
+        let transformed = motion_rect(rect, AvatarMotion::Pulse, 0.25);
+
+        assert_eq!(transformed.center(), rect.center());
+        assert!(transformed.width() > rect.width());
+        assert!(transformed.height() > rect.height());
+    }
+
+    #[test]
+    fn bounce_motion_moves_up_without_resizing() {
+        let rect = test_rect();
+        let transformed = motion_rect(rect, AvatarMotion::Bounce, 1.0 / 6.0);
+
+        assert_eq!(transformed.size(), rect.size());
+        assert_eq!(transformed.center().x, rect.center().x);
+        assert!(transformed.center().y < rect.center().y);
+    }
+
+    #[test]
+    fn shake_motion_moves_sideways_without_resizing() {
+        let rect = test_rect();
+        let transformed = motion_rect(rect, AvatarMotion::Shake, 1.0 / 32.0);
+
+        assert_eq!(transformed.size(), rect.size());
+        assert!(transformed.center().x > rect.center().x);
+        assert_eq!(transformed.center().y, rect.center().y);
+    }
+
+    #[test]
+    fn sprite_containment_preserves_aspect_ratio() {
+        let bounds = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(200.0, 100.0));
+        let rect = contain_rect(bounds, egui::vec2(50.0, 100.0));
+
+        assert_eq!(rect.height(), 100.0);
+        assert_eq!(rect.width(), 50.0);
+        assert_eq!(rect.center(), bounds.center());
+    }
+
+    fn test_rect() -> egui::Rect {
+        egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(200.0, 100.0))
     }
 }

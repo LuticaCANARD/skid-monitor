@@ -6,10 +6,14 @@ mod persistence;
 
 use crate::alert::AlertStore;
 use crate::edge::EdgeSignalDecorations;
-use crate::model::{EventRow, MetricSample, NodeSummary, SignalCounters, Status};
+use crate::model::{
+    AvatarReactionProfile, EventRow, MetricSample, NodeSummary, SignalCounters, Status,
+};
 #[cfg(target_arch = "wasm32")]
 use crate::platform::BrowserStorageScope;
 use crate::platform::IngressControl;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::AvatarProfileSaveReceiver;
 use crate::storage::StateStorage;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -24,6 +28,11 @@ pub(crate) struct DashboardState {
     pub(in crate::state) edge_decorations: EdgeSignalDecorations,
     pub(in crate::state) alerts: AlertStore,
     pub(in crate::state) alerts_enabled: bool,
+    pub(in crate::state) avatar_profile: AvatarReactionProfile,
+    pub(in crate::state) avatar_profile_revision: u64,
+    pub(in crate::state) avatar_model_revision: u64,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(in crate::state) pending_avatar_profile: Option<PendingAvatarProfileSave>,
     pub(in crate::state) storage: Option<StateStorage>,
     #[cfg(target_arch = "wasm32")]
     pub(in crate::state) browser_storage_scope: BrowserStorageScope,
@@ -31,4 +40,10 @@ pub(crate) struct DashboardState {
     /// Lets the dashboard ask the running receiver loop to manage client
     /// ingress listeners at runtime.
     pub(in crate::state) ingress_control: Option<IngressControl>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(in crate::state) struct PendingAvatarProfileSave {
+    profile: AvatarReactionProfile,
+    result_rx: AvatarProfileSaveReceiver,
 }

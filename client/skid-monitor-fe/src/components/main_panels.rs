@@ -1,16 +1,14 @@
 mod kind;
 
 use crate::alert::AlertStore;
-#[cfg(feature = "high-spec")]
-use crate::components::avatar;
 use crate::components::{
-    database_metrics,
+    avatar, database_metrics,
     layout::{LayoutMode, PanelLimits, graph_panel_width},
     metrics, nodes, trends,
 };
 use crate::config;
 use crate::edge::EdgeSignalDecorations;
-use crate::model::{MetricSample, NodeSummary};
+use crate::model::{AvatarReactionProfile, MetricSample, NodeSummary};
 use eframe::egui;
 use kind::MainPanel;
 use std::collections::{BTreeMap, VecDeque};
@@ -28,8 +26,13 @@ pub(crate) struct MainPanelData<'a> {
     metrics: Vec<&'a MetricSample>,
     metric_history: &'a BTreeMap<String, VecDeque<f64>>,
     alerts: &'a AlertStore,
-    #[cfg(feature = "high-spec")]
-    show_avatar: bool,
+    character: CharacterPanelData<'a>,
+}
+
+pub(crate) struct CharacterPanelData<'a> {
+    pub(crate) profile: &'a AvatarReactionProfile,
+    pub(crate) model: &'a avatar::AvatarModelCache,
+    pub(crate) visible: bool,
 }
 
 impl<'a> MainPanelData<'a> {
@@ -39,7 +42,7 @@ impl<'a> MainPanelData<'a> {
         metrics: Vec<&'a MetricSample>,
         metric_history: &'a BTreeMap<String, VecDeque<f64>>,
         alerts: &'a AlertStore,
-        #[cfg(feature = "high-spec")] show_avatar: bool,
+        character: CharacterPanelData<'a>,
     ) -> Self {
         Self {
             nodes,
@@ -47,8 +50,7 @@ impl<'a> MainPanelData<'a> {
             metrics,
             metric_history,
             alerts,
-            #[cfg(feature = "high-spec")]
-            show_avatar,
+            character,
         }
     }
 }
@@ -105,13 +107,17 @@ impl PanelTemplate for MainPanel {
                 data.metric_history,
             ),
             Self::Metrics => {
-                #[cfg(feature = "high-spec")]
-                if data.show_avatar {
+                if data.character.visible {
                     avatar::show(
                         ui,
                         panel_width,
                         panel_height,
-                        avatar::AvatarPresenterInput::for_node(&data.nodes, data.alerts),
+                        avatar::AvatarPresenterInput::for_node(
+                            &data.nodes,
+                            data.alerts,
+                            data.character.profile,
+                        ),
+                        data.character.model,
                     );
                     return;
                 }

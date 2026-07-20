@@ -9,8 +9,9 @@
 1. 이 앱의 역할은 Skid Monitor 신호를 실시간으로 훑는 control room이다.
 2. 주요 화면은 metric/log/trace 상태, source별 카운터, 최근 이벤트 목록처럼 밀도 있는 운영 UI다.
 3. 이 범위는 WebView보다 Rust immediate-mode UI가 더 단순하고 배포 의존성도 작다.
-4. VRM, avatar, rich 3D 표현은 client의 Unity binding 책임으로 둔다.
-> 이 목표는 필요하다면 여기에서 이룰 수 있다.
+4. full VRM animation과 rich 3D 연출은 client의 Unity binding 책임으로 둔다. 단, 운영 상태를 보여주는
+   제한된 native high-spec 정적 VRM viewport는 [RFC 0003](0003-vrm-avatar-presenter.md)에 따라 egui
+   frontend 안에 격리할 수 있다.
 5. rich한 웹 그래프나 외부 plugin panel이 필요해지면 별도 웹 frontend를 새로 둔다.
 
 ## 결과

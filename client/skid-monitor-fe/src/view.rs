@@ -1,10 +1,12 @@
 use crate::components::{
+    avatar::AvatarModelCache,
     counters, header,
     layout::{
         ContentLayout, LayoutMode, PanelLimits, centered_content, remaining_height, section_gap,
     },
 };
 use crate::config;
+use crate::model::AvatarReactionProfile;
 use crate::pages::{
     detail,
     overview::{self, OverviewAction, OverviewState},
@@ -12,6 +14,7 @@ use crate::pages::{
 use crate::state::DashboardState;
 use crate::ui_settings::UiSettings;
 use eframe::egui;
+use std::time::Duration;
 
 pub(crate) struct ControlRoomUiState {
     selected_node_key: Option<String>,
@@ -19,12 +22,21 @@ pub(crate) struct ControlRoomUiState {
     settings_open: bool,
     show_avatar: bool,
     settings: UiSettings,
+    avatar_model: AvatarModelCache,
+    avatar_model_revision: u64,
 }
 
 impl ControlRoomUiState {
-    pub(crate) fn new(ctx: &egui::Context) -> Self {
-        let settings = UiSettings::default();
+    pub(crate) fn new(
+        ctx: &egui::Context,
+        avatar_profile: &AvatarReactionProfile,
+        avatar_profile_revision: u64,
+        avatar_model_revision: u64,
+    ) -> Self {
+        let settings = UiSettings::new(avatar_profile, avatar_profile_revision);
         settings.apply_visuals(ctx);
+        let mut avatar_model = AvatarModelCache::default();
+        avatar_model.sync(ctx, avatar_profile);
 
         Self {
             selected_node_key: None,
@@ -32,6 +44,8 @@ impl ControlRoomUiState {
             settings_open: false,
             show_avatar: false,
             settings,
+            avatar_model,
+            avatar_model_revision,
         }
     }
 }
@@ -47,7 +61,25 @@ impl<'a> ControlRoomView<'a> {
     }
 
     pub(crate) fn show(&mut self, ui: &mut egui::Ui) {
-        self.ui_state.settings.load_dropped_image(ui.ctx());
+        if let Some(Err(error)) = self.state.poll_avatar_profile_save() {
+            self.ui_state.settings.reject_avatar_profile(error);
+        }
+        let avatar_profile_revision = self.state.avatar_profile_revision();
+        self.ui_state
+            .settings
+            .sync_avatar_profile(self.state.avatar_profile(), avatar_profile_revision);
+        let avatar_model_revision = self.state.avatar_model_revision();
+        if self.ui_state.avatar_model_revision != avatar_model_revision {
+            self.ui_state.avatar_model.invalidate();
+            self.ui_state.avatar_model_revision = avatar_model_revision;
+        }
+        self.ui_state
+            .avatar_model
+            .sync(ui.ctx(), self.state.avatar_profile());
+        if self.state.avatar_profile_save_pending() {
+            ui.ctx().request_repaint_after(Duration::from_millis(50));
+        }
+        self.ui_state.settings.load_dropped_assets(ui.ctx());
         self.ui_state.settings.paint_background(ui);
 
         egui::Frame::default()
@@ -98,6 +130,7 @@ impl<'a> ControlRoomView<'a> {
                                         self.state,
                                         key,
                                         &mut self.ui_state.show_avatar,
+                                        &self.ui_state.avatar_model,
                                     ),
                                     Some(detail::DetailAction::BackToOverview)
                                 ) {
@@ -185,9 +218,21 @@ impl<'a> ControlRoomView<'a> {
             ctx,
             &mut self.ui_state.settings_open,
             alerts_enabled,
+            self.state.avatar_profile_save_pending(),
+            self.ui_state.avatar_model.requested_path(),
+            self.ui_state.avatar_model.error(),
         );
         if let Some(enabled) = changes.alerts_enabled {
             self.state.set_alerts_enabled(enabled);
+        }
+        if let Some(profile) = changes.avatar_profile {
+            if let Err(error) = self.state.set_avatar_profile(profile) {
+                self.ui_state.settings.reject_avatar_profile(error.clone());
+                self.state
+                    .push_settings_error(format!("character profile rejected: {error}"));
+            } else if self.state.avatar_profile_save_pending() {
+                ctx.request_repaint_after(Duration::from_millis(50));
+            }
         }
     }
 }

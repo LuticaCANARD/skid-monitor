@@ -55,6 +55,7 @@ pub(crate) fn run_native() -> eframe::Result {
             .with_inner_size(WINDOW_INITIAL_SIZE)
             .with_min_inner_size(WINDOW_MIN_SIZE),
         renderer: selected_renderer(),
+        depth_buffer: selected_depth_buffer(),
         run_and_return: false,
         ..Default::default()
     };
@@ -64,6 +65,16 @@ pub(crate) fn run_native() -> eframe::Result {
         native_options,
         Box::new(|cc| Ok(Box::new(crate::ControlRoomApp::new(cc)))),
     )
+}
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+fn selected_depth_buffer() -> u8 {
+    24
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "high-spec")))]
+fn selected_depth_buffer() -> u8 {
+    0
 }
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]

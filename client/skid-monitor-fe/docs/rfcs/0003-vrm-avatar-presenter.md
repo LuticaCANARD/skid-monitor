@@ -4,6 +4,10 @@
 
 Draft
 
+2026-07-20 구현 메모: native `high-spec`의 정적 VRM 0.x/1.0 mesh/rest-skin/base-color renderer와
+`idle`/`warning`/`critical` viewport motion은 구현됐다. 이 RFC의 expression, SpringBone, MToon 전체,
+VRMA, `Notice`/`Relieved` one-shot 범위는 여전히 Draft다.
+
 ## 목표
 
 고사양 frontend 빌드에서 VRM 아바타를 렌더링하고, 알람 상태를 표정, 자세, 색상, 짧은 말풍선으로 표현한다.
@@ -46,11 +50,15 @@ VRM 1.0에서 핵심 확장은 다음이다.
 
 1차 구현은 VRM 전체 호환을 목표로 하지 않는다.
 
-- `.vrm` 또는 `.glb` 파일 선택 경로를 준비한다.
+- `.vrm` 파일 선택 경로를 제공하고 일반 `.glb`는 VRM으로 오인하지 않도록 거부한다.
 - glTF/GLB loader를 통해 mesh, node hierarchy, skin, texture를 읽을 수 있는 구조를 둔다.
 - `VRMC_vrm.meta`와 `VRMC_vrm.humanoid`를 파싱해 avatar 정보와 humanoid bone mapping을 확인한다.
 - 알람 severity를 avatar state로 매핑한다.
 - MToon, SpringBone, VRMA는 fallback 가능한 후속 단계로 둔다.
+
+현재 runtime은 위 범위 중 mesh, node hierarchy, rest-pose skinning, embedded base-color texture,
+meta/humanoid 검증과 severity mapping을 구현했다. MToon 고유 shading, expression morph, SpringBone,
+constraint/lookAt, VRMA/glTF animation은 실행하지 않는다.
 
 ## 상태 매핑
 
@@ -64,6 +72,9 @@ VRM 1.0에서 핵심 확장은 다음이다.
 
 아바타 state는 최고 severity의 활성 알람을 기준으로 한다.
 여러 알람이 동시에 있으면 `critical > warning > info` 순으로 우선한다.
+
+현재 runtime state는 `Idle`, `Concerned`, `Urgent`만 사용한다. `Notice`, `Relieved`와 expression/pose
+mapping은 구현 완료로 간주하지 않는다.
 
 ## UI 배치
 
@@ -87,9 +98,9 @@ VRM 1.0에서 핵심 확장은 다음이다.
 ## Fallback 정책
 
 - VRM 파일이 없으면 built-in placeholder avatar state를 사용한다.
-- VRM extension 파싱이 실패해도 일반 glTF mesh preview가 가능하면 표시한다.
+- VRM extension/meta/humanoid 검증이 실패한 일반 GLB나 손상 파일은 표시하지 않고 fallback한다.
 - MToon을 구현하지 못한 material은 glTF PBR 또는 unlit fallback을 사용한다.
-- SpringBone을 구현하지 않아도 알람 표현은 표정, 색상, 말풍선으로 동작해야 한다.
+- SpringBone을 구현하지 않아도 알람 표현은 bounded viewport motion과 말풍선으로 동작해야 한다.
 
 ## 데이터 구조 초안
 
@@ -121,7 +132,8 @@ pub(crate) struct AvatarPresenterInput {
 
 ## 열린 질문
 
-- 기본 bundled avatar asset을 둘지, 사용자 파일만 허용할지 결정해야 한다.
-- VRM loader를 직접 구성할지, Rust glTF loader 위에 VRM extension parser를 얹을지 결정해야 한다.
-- wgpu render surface를 egui 안에 어떻게 격리할지 실험이 필요하다.
+- 기본 bundled avatar asset을 둘지는 모델 재배포 라이선스를 확인한 뒤 결정해야 한다. 현재는 사용자
+  파일만 허용한다.
+- expression/MToon/SpringBone/VRMA를 native renderer에 넣을지 Unity companion으로 둘지 결정해야 한다.
+- browser VRM binary를 tenant별 IndexedDB/OPFS에 영속화할지 결정해야 한다.
 - avatar 음성 안내를 넣을지, 화면 메시지만 둘지 결정해야 한다.

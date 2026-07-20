@@ -92,6 +92,25 @@ impl AlertStore {
             .max()
     }
 
+    pub(crate) fn highest_for_presenter(
+        &self,
+        endpoint: &str,
+        node: &str,
+    ) -> Option<AlertSeverity> {
+        self.active
+            .values()
+            .filter(|alert| alert_relevant_to_presenter(alert, endpoint, node))
+            .map(|alert| alert.severity)
+            .max()
+    }
+
+    pub(crate) fn active_count_for_presenter(&self, endpoint: &str, node: &str) -> usize {
+        self.active
+            .values()
+            .filter(|alert| alert_relevant_to_presenter(alert, endpoint, node))
+            .count()
+    }
+
     fn fire(
         &mut self,
         key: String,
@@ -140,6 +159,10 @@ impl AlertStore {
             snapshot,
         })
     }
+}
+
+fn alert_relevant_to_presenter(alert: &AlertSnapshot, endpoint: &str, node: &str) -> bool {
+    alert.endpoint == endpoint && (alert.node == node || alert.rule_id == "receiver.error")
 }
 
 struct MetricEvaluation {

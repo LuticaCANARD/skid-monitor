@@ -1,9 +1,11 @@
 use super::AlertRecord;
 use crate::edge::{PersistedEdgeState, severity_from_name, severity_name};
-use crate::model::{AlertStatus, AlertTransition};
+use crate::model::{AlertStatus, AlertTransition, AvatarReactionProfile};
 use sqlx::Row;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use std::path::Path;
+
+pub(super) const AVATAR_PROFILE_KEY: &str = "skid-monitor.avatar-reaction-profile.v1";
 
 pub(super) async fn open_pool(path: &Path) -> Result<SqlitePool, String> {
     if let Some(parent) = path
@@ -97,6 +99,61 @@ pub(super) async fn initialize_schema(pool: &SqlitePool) -> sqlx::Result<()> {
     )
     .execute(pool)
     .await?;
+
+    sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL
+        )
+        "#,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub(super) async fn load_avatar_profile(
+    pool: &SqlitePool,
+) -> Result<Option<AvatarReactionProfile>, String> {
+    let value =
+        sqlx::query_scalar::<_, String>("SELECT value_json FROM app_settings WHERE key = ?1")
+            .bind(AVATAR_PROFILE_KEY)
+            .fetch_optional(pool)
+            .await
+            .map_err(|error| format!("failed to read avatar reaction profile: {error}"))?;
+
+    value
+        .map(|value| {
+            let profile: AvatarReactionProfile = serde_json::from_str(&value)
+                .map_err(|error| format!("failed to decode avatar reaction profile: {error}"))?;
+            profile
+                .normalized()
+                .map_err(|error| format!("invalid avatar reaction profile: {error}"))
+        })
+        .transpose()
+}
+
+pub(super) async fn save_avatar_profile(
+    pool: &SqlitePool,
+    profile: &AvatarReactionProfile,
+) -> Result<(), String> {
+    let value = serde_json::to_string(profile)
+        .map_err(|error| format!("failed to encode avatar reaction profile: {error}"))?;
+    sqlx::query(
+        r#"
+        INSERT INTO app_settings (key, value_json)
+        VALUES (?1, ?2)
+        ON CONFLICT(key) DO UPDATE SET
+            value_json = excluded.value_json
+        "#,
+    )
+    .bind(AVATAR_PROFILE_KEY)
+    .bind(value)
+    .execute(pool)
+    .await
+    .map_err(|error| format!("failed to save avatar reaction profile: {error}"))?;
 
     Ok(())
 }

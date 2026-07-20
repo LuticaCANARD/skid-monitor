@@ -1,11 +1,15 @@
 use super::DashboardState;
+#[cfg(not(target_arch = "wasm32"))]
+use super::PendingAvatarProfileSave;
 use crate::alert::AlertStore;
 use crate::edge::EdgeSignalDecorations;
 use crate::model::{
-    AlertSeverity, AlertSummary, EventRow, MetricSample, NodeSummary, OperationalSummary,
-    SignalCounters, Status,
+    AlertSeverity, AlertSummary, AvatarReactionProfile, EventRow, MetricSample, NodeSummary,
+    OperationalSummary, SignalCounters, Status,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc::TryRecvError;
 
 impl DashboardState {
     pub(crate) fn status(&self) -> &Status {
@@ -46,6 +50,111 @@ impl DashboardState {
 
     pub(crate) fn alerts_enabled(&self) -> bool {
         self.alerts_enabled
+    }
+
+    pub(crate) fn avatar_profile(&self) -> &AvatarReactionProfile {
+        &self.avatar_profile
+    }
+
+    pub(crate) fn avatar_profile_revision(&self) -> u64 {
+        self.avatar_profile_revision
+    }
+
+    pub(crate) fn avatar_model_revision(&self) -> u64 {
+        self.avatar_model_revision
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn avatar_profile_save_pending(&self) -> bool {
+        self.pending_avatar_profile.is_some()
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn avatar_profile_save_pending(&self) -> bool {
+        false
+    }
+
+    pub(crate) fn set_avatar_profile(
+        &mut self,
+        profile: AvatarReactionProfile,
+    ) -> Result<(), String> {
+        let profile = profile.normalized()?;
+        let storage = self.storage.as_ref().ok_or_else(|| {
+            "state storage is unavailable; character profile was not applied".to_string()
+        })?;
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.pending_avatar_profile.is_some() {
+                return Err("a character profile save is already in progress".to_string());
+            }
+            let result_rx = storage.queue_avatar_profile_save(&profile)?;
+            self.pending_avatar_profile = Some(PendingAvatarProfileSave { profile, result_rx });
+            Ok(())
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            storage.persist_avatar_profile(&profile)?;
+            self.commit_avatar_profile(profile);
+            Ok(())
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn poll_avatar_profile_save(&mut self) -> Option<Result<(), String>> {
+        let result = match self.pending_avatar_profile.as_ref()?.result_rx.try_recv() {
+            Ok(result) => result,
+            Err(TryRecvError::Empty) => return None,
+            Err(TryRecvError::Disconnected) => {
+                Err("character profile save result channel disconnected".to_string())
+            }
+        };
+        let pending = self.pending_avatar_profile.take()?;
+
+        match result {
+            Ok(()) => {
+                self.commit_avatar_profile(pending.profile);
+                Some(Ok(()))
+            }
+            Err(error) => {
+                self.push_event(
+                    "settings",
+                    format!("character profile save failed: {error}"),
+                );
+                Some(Err(error))
+            }
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn poll_avatar_profile_save(&mut self) -> Option<Result<(), String>> {
+        None
+    }
+
+    fn commit_avatar_profile(&mut self, profile: AvatarReactionProfile) {
+        let reload_model =
+            self.avatar_profile.model_path != profile.model_path || self.avatar_profile == profile;
+        if self.avatar_profile == profile {
+            self.push_event("settings", "character reaction profile saved");
+        } else {
+            self.push_event(
+                "settings",
+                format!(
+                    "character reaction profile changed to {}",
+                    profile.model_name
+                ),
+            );
+        }
+        self.avatar_profile = profile;
+        self.avatar_profile_revision = self.avatar_profile_revision.wrapping_add(1);
+        if reload_model {
+            self.avatar_model_revision = self.avatar_model_revision.wrapping_add(1);
+        }
+    }
+
+    pub(crate) fn push_settings_error(&mut self, message: impl Into<String>) {
+        self.push_event("settings", message);
     }
 
     pub(crate) fn set_alerts_enabled(&mut self, enabled: bool) {

@@ -1,6 +1,6 @@
-use super::AlertRecord;
+use super::{AlertRecord, BrowserScopeRestore};
 use crate::edge::PersistedEdgeState;
-use crate::model::{AlertSeverity, AlertStatus, AlertTransition};
+use crate::model::{AlertSeverity, AlertStatus, AlertTransition, AvatarReactionProfile};
 use crate::platform::BrowserStorageScope;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -11,6 +11,7 @@ use web_sys::{Storage, UrlSearchParams};
 const EDGES_KEY: &str = "skid-monitor.edge-state.v1";
 const ALERT_STATE_KEY: &str = "skid-monitor.alert-state.v1";
 const ALERT_EVENTS_KEY: &str = "skid-monitor.alert-events.v1";
+const AVATAR_PROFILE_KEY: &str = "skid-monitor.avatar-reaction-profile.v1";
 const MAX_EDGE_STATES: usize = 512;
 const MAX_ALERT_EVENTS: usize = 512;
 
@@ -51,34 +52,28 @@ impl BrowserStorage {
 
     pub(super) fn open(
         initial_scope: BrowserStorageScope,
-    ) -> Result<(Self, Vec<PersistedEdgeState>), String> {
+    ) -> Result<(Self, BrowserScopeRestore), String> {
         let storage = web_sys::window()
             .ok_or_else(|| "window is unavailable".to_string())?
             .local_storage()
             .map_err(js_error)?
             .ok_or_else(|| "localStorage is unavailable".to_string())?;
-        let restored_edges = match initial_scope.storage_key(EDGES_KEY) {
-            Some(key) => read_json(&storage, &key)?.unwrap_or_default(),
-            None => Vec::new(),
-        };
+        let restored = restore_scope(&storage, &initial_scope);
         Ok((
             Self {
                 storage,
                 scope: Rc::new(RefCell::new(initial_scope)),
             },
-            restored_edges,
+            restored,
         ))
     }
 
     pub(super) fn activate_scope(
         &self,
         scope: BrowserStorageScope,
-    ) -> Result<Vec<PersistedEdgeState>, String> {
+    ) -> Result<BrowserScopeRestore, String> {
         self.scope.replace(scope.clone());
-        let Some(key) = scope.storage_key(EDGES_KEY) else {
-            return Ok(Vec::new());
-        };
-        Ok(read_json(&self.storage, &key)?.unwrap_or_default())
+        Ok(restore_scope(&self.storage, &scope))
     }
 
     pub(super) fn persist_edge(&self, edge: &PersistedEdgeState) {
@@ -146,8 +141,56 @@ impl BrowserStorage {
         report_error(result);
     }
 
+    pub(super) fn persist_avatar_profile(
+        &self,
+        profile: &AvatarReactionProfile,
+    ) -> Result<(), String> {
+        let key = self.storage_key(AVATAR_PROFILE_KEY).ok_or_else(|| {
+            "character profile storage is unavailable until cloud authentication completes"
+                .to_string()
+        })?;
+        write_json(&self.storage, &key, profile)
+    }
+
     fn storage_key(&self, base: &str) -> Option<String> {
         self.scope.borrow().storage_key(base)
+    }
+}
+
+fn restore_scope(storage: &Storage, scope: &BrowserStorageScope) -> BrowserScopeRestore {
+    let mut warnings = Vec::new();
+    let restored_edges = match scope.storage_key(EDGES_KEY) {
+        Some(key) => match read_json(storage, &key) {
+            Ok(edges) => edges.unwrap_or_default(),
+            Err(error) => {
+                warnings.push(format!("edge state ignored: {error}"));
+                Vec::new()
+            }
+        },
+        None => Vec::new(),
+    };
+    let avatar_profile = match scope.storage_key(AVATAR_PROFILE_KEY) {
+        Some(key) => match read_json::<AvatarReactionProfile>(storage, &key) {
+            Ok(Some(profile)) => match profile.normalized() {
+                Ok(profile) => Some(profile),
+                Err(error) => {
+                    warnings.push(format!("avatar reaction profile ignored: {error}"));
+                    None
+                }
+            },
+            Ok(None) => None,
+            Err(error) => {
+                warnings.push(format!("avatar reaction profile ignored: {error}"));
+                None
+            }
+        },
+        None => None,
+    };
+
+    BrowserScopeRestore {
+        restored_edges,
+        avatar_profile,
+        warning: (!warnings.is_empty()).then(|| warnings.join("; ")),
     }
 }
 

@@ -126,7 +126,17 @@ pub(super) fn dropped_image_path(ctx: &egui::Context) -> Option<String> {
             .raw
             .dropped_files
             .iter()
-            .find_map(|file| file.path.as_ref())
+            .filter_map(|file| file.path.as_ref())
+            .find(|path| {
+                path.extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| {
+                        matches!(
+                            extension.to_ascii_lowercase().as_str(),
+                            "png" | "jpg" | "jpeg"
+                        )
+                    })
+            })
             .map(|path| path.display().to_string())
     })
 }

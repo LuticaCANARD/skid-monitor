@@ -13,6 +13,10 @@ use web_time::Instant;
 impl DashboardState {
     pub(crate) fn new() -> Self {
         let storage_init = StateStorage::start();
+        let avatar_profile = storage_init
+            .avatar_profile
+            .and_then(|profile| profile.normalized().ok())
+            .unwrap_or_default();
         let mut edge_decorations = EdgeSignalDecorations::default();
         let restored_nodes = edge_decorations.restore(storage_init.restored_edges);
         let nodes = restored_nodes
@@ -31,6 +35,11 @@ impl DashboardState {
             edge_decorations,
             alerts: AlertStore::default(),
             alerts_enabled: true,
+            avatar_profile,
+            avatar_profile_revision: 0,
+            avatar_model_revision: 0,
+            #[cfg(not(target_arch = "wasm32"))]
+            pending_avatar_profile: None,
             storage: storage_init.storage,
             #[cfg(target_arch = "wasm32")]
             browser_storage_scope: storage_init.browser_scope,
@@ -229,9 +238,11 @@ impl DashboardState {
         let label = scope.label();
         let restored = match &self.storage {
             Some(storage) => storage.activate_browser_scope(scope.clone()),
-            None => Ok(Vec::new()),
+            None => Err("browser state storage is unavailable".to_string()),
         };
         self.browser_storage_scope = scope;
+        self.avatar_profile_revision = self.avatar_profile_revision.wrapping_add(1);
+        self.avatar_model_revision = self.avatar_model_revision.wrapping_add(1);
 
         // Dashboard models are not tenant-partitioned in memory. Replace the
         // complete signal-derived view before accepting records for a newly
@@ -250,18 +261,25 @@ impl DashboardState {
             .unwrap_or(Status::Starting);
 
         match restored {
-            Ok(edges) => {
-                let restored_nodes = self.edge_decorations.restore(edges);
+            Ok(restored) => {
+                self.avatar_profile = restored.avatar_profile.unwrap_or_default();
+                let restored_nodes = self.edge_decorations.restore(restored.restored_edges);
                 self.nodes = restored_nodes
                     .into_iter()
                     .map(|node| (edge_key(&node.endpoint, &node.node), node))
                     .collect();
                 self.push_event("storage", format!("browser state scope changed to {label}"));
+                if let Some(warning) = restored.warning {
+                    self.push_event("storage", warning);
+                }
             }
-            Err(error) => self.push_event(
-                "error",
-                format!("browser state scope changed to {label}, but restore failed: {error}"),
-            ),
+            Err(error) => {
+                self.avatar_profile = Default::default();
+                self.push_event(
+                    "error",
+                    format!("browser state scope changed to {label}, but restore failed: {error}"),
+                );
+            }
         }
     }
 }
@@ -301,6 +319,10 @@ mod tests {
             edge_decorations: EdgeSignalDecorations::default(),
             alerts: AlertStore::default(),
             alerts_enabled: true,
+            avatar_profile: Default::default(),
+            avatar_profile_revision: 0,
+            avatar_model_revision: 0,
+            pending_avatar_profile: None,
             storage: None,
             listeners: Default::default(),
             ingress_control: None,
@@ -335,5 +357,78 @@ mod tests {
                 panic!("expected AddListener, got RemoveListener({addr})")
             }
         }
+    }
+
+    #[test]
+    fn character_profile_update_is_validated_and_applied_atomically() {
+        let db_path = std::env::temp_dir().join(format!(
+            "skid-monitor-fe-state-profile-{}-{}.sqlite3",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos()
+        ));
+        let storage_init = StateStorage::start_at(db_path.clone());
+        let mut state = empty_state();
+        state.storage = Some(storage_init.storage.expect("test state storage"));
+        let original = state.avatar_profile().clone();
+        let invalid = crate::model::AvatarReactionProfile {
+            model_name: "  ".to_string(),
+            ..original.clone()
+        };
+
+        assert!(state.set_avatar_profile(invalid).is_err());
+        assert_eq!(state.avatar_profile(), &original);
+
+        let valid = crate::model::AvatarReactionProfile {
+            model_name: "  Operator Cat  ".to_string(),
+            ..original
+        };
+        state.set_avatar_profile(valid).expect("valid profile");
+        assert!(state.avatar_profile_save_pending());
+        assert_eq!(state.avatar_profile().model_name, "Skid");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while state.avatar_profile_save_pending() {
+            if let Some(result) = state.poll_avatar_profile_save() {
+                result.expect("profile save result");
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "profile save did not complete"
+            );
+            std::thread::yield_now();
+        }
+
+        assert_eq!(state.avatar_profile().model_name, "Operator Cat");
+        assert!(
+            state
+                .events()
+                .back()
+                .is_some_and(|event| event.message.contains("Operator Cat"))
+        );
+
+        drop(state);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", db_path.display()));
+        }
+    }
+
+    #[test]
+    fn character_profile_is_not_applied_when_storage_is_unavailable() {
+        let mut state = empty_state();
+        let original = state.avatar_profile().clone();
+        let profile = crate::model::AvatarReactionProfile {
+            model_name: "Ephemeral Cat".to_string(),
+            ..original.clone()
+        };
+
+        let error = state
+            .set_avatar_profile(profile)
+            .expect_err("profile must remain durable or be rejected");
+
+        assert!(error.contains("storage is unavailable"));
+        assert_eq!(state.avatar_profile(), &original);
     }
 }

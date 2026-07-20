@@ -132,7 +132,7 @@ control plane에서 분리한다.
 - authorized file offer/chunk/hash/resume plane
 - actual edge hardware sensor adapter
 - Windows host sampler와 service smoke test
-- VRM loader/renderer/animation
+- VRM expression/SpringBone/MToon 전체 표현과 VRMA/skeletal animation
 - quantum provider job API adapter
 - durable agent payload spool과 automated end-to-end docs smoke test
 

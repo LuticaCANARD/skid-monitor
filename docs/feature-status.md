@@ -36,16 +36,20 @@ code와 test가 제공하는 현재 경계를 기록한다.
 | PostgreSQL/OIDC Cloud mode | Experimental | split ingress/client API, OAuth/OIDC roles, tenant RLS, idempotent append, cursor replay | [server](../skid-monitor-server/src), [migration](../skid-monitor-server/migrations/0001_cloud_signal_store.sql), [conditional integration test](../skid-monitor-server/tests/postgres_store.rs) | live DB test는 기본 suite에서 ignored, retention/restore/HA deployment 검증 |
 | Out-of-process .NET extensions | Experimental | Rust receiver가 newline-delimited JSON을 .NET sidecar stdin으로 전달 | [Rust host boundary](../client/skid-monitor-client/src/extension.rs), [.NET guide](../client/skid-monitor-client/bindings/dotnet/README.md) | 이번 검증에서 dotnet build/runtime smoke 미실행, backpressure policy |
 | Edge collection | Prototype | compact no-std wire decode와 deterministic mock temperature/voltage/RSSI sender | [wire tests](../skid-edge-wire/src/lib.rs), [mock sender](../skid-edge-agent/src/main.rs), [device adapter test](../skid-monitor-agent/src/device_socket.rs) | 실제 GPIO/I2C/serial/MCU sensor와 enrollment/auth |
-| Deterministic alerts / character | Prototype | 고정 threshold alert와 severity 반응형 2D placeholder character | [alert tests](../client/skid-monitor-fe/src/alert.rs), [placeholder presenter](../client/skid-monitor-fe/src/components/avatar.rs) | configurable rules, heartbeat/offline detection, VRM loader/renderer/animation |
+| Deterministic alerts / configurable character | Prototype | 고정 threshold alert의 `idle`/`warning`/`critical` 상태를 `Still`/`Pulse`/`Bounce`/`Shake` motion과 상태별 message에 매핑한다. Character panel은 low/high-spec 공통이며 native PNG/JPEG를 읽는다. native high-spec은 VRM 0.x/1.0 embedded mesh, rest skin, base-color texture를 depth-enabled WGPU viewport에 정적으로 표시한다. profile은 native SQLite 또는 tenant/legacy-scoped browser `localStorage`에 저장한다. | [alert tests](../client/skid-monitor-fe/src/alert.rs), [reaction profile](../client/skid-monitor-fe/src/model/avatar.rs), [presenter](../client/skid-monitor-fe/src/components/avatar.rs), [VRM loader](../client/skid-monitor-fe/src/components/avatar/vrm/loader.rs) | heartbeat/offline detection, 사용자 정의 alert threshold/rule, browser local-file import, expression/MToon 전체/SpringBone/VRMA와 skeletal animation clip player |
 | Authorized file transfer | Planned | 별도 node가 root availability/file count/bytes metadata만 전송 | [current node](../skid-file-node/src/main.rs), [design rationale](../skid-file-node/docs/rfcs/0001-crate-role.md) | offer, auth, path/symlink policy, chunk/hash/resume data plane |
 | Compute routing | Prototype | logical CPU, `gpu.detected=0`, placeholder score를 보고 | [current advisor and test](../skid-compute-advisor/src/main.rs), [role RFC](../skid-compute-advisor/docs/rfcs/0001-crate-role.md) | GPU/memory/thermal detection, scoring model; remote execution은 non-goal |
 | Quantum backend adapter | Planned | `Source::Quantum` type reservation만 있고 provider API adapter는 없음 | [source enum](../skid-protocol/src/metrics.rs), [umbrella RFC](rfcs/0001-initial-skid-monitor-integration.md) | provider job API adapter, identity/config/test |
 
 ## Verification snapshot
 
-2026-07-19에 다음을 확인했다.
+2026-07-19에 native FE + agent smoke를 확인했고, 2026-07-20에 자동 검증을 다시 실행했다.
 
-- `cargo test --workspace`: 141 passed, 0 failed, PostgreSQL integration test 1개 ignored
+- `cargo test --workspace`: 170 passed, 0 failed, PostgreSQL integration test 1개 ignored
+- `cargo test -p skid-monitor-fe --lib --no-default-features --features high-spec`: 76 passed, 0 failed
+- `cargo check -p skid-monitor-fe --target wasm32-unknown-unknown --no-default-features --features web`: passed
+- 공식 Seed-san VRM 1.0 sample: loader decode 후 Apple M1 Metal의 512x512 offscreen WGPU
+  `Rgba8Unorm` + `Depth24Plus` draw에서 validation error 없이 visible pixel 확인
 - macOS arm64 native FE + agent smoke: loopback signal 수신, `macos` metric node와 log node SQLite 등록
 - agent first cycle: host/self-observation metric, trace, log batch 생성
 - PostgreSQL, Linux runtime, Windows, .NET extension, actual edge hardware는 이 검증에서 실행하지 않음

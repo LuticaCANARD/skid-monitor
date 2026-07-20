@@ -3,9 +3,10 @@ mod action;
 pub(crate) use action::DetailAction;
 
 use crate::components::{
+    avatar::AvatarModelCache,
     event_log,
     layout::{LayoutMode, PanelLimits},
-    main_panels::{self, MainPanelData},
+    main_panels::{self, CharacterPanelData, MainPanelData},
 };
 use crate::config;
 use crate::edge::edge_key;
@@ -33,6 +34,7 @@ pub(crate) fn show(
     state: &DashboardState,
     key: &str,
     show_avatar: &mut bool,
+    avatar_model: &AvatarModelCache,
 ) -> Option<DetailAction> {
     let mut action = None;
     let Some(node) = state.nodes().get(key) else {
@@ -47,7 +49,7 @@ pub(crate) fn show(
     }
     ui.add_space(config::SECTION_GAP);
 
-    if let Some(data) = detail_page_data(state, key, *show_avatar) {
+    if let Some(data) = detail_page_data(state, key, *show_avatar, avatar_model) {
         show_resizable_content(ui, compact, panel_width, layout, limits, data);
     }
 
@@ -59,8 +61,6 @@ fn show_toolbar(
     node: &NodeSummary,
     show_avatar: &mut bool,
 ) -> Option<DetailAction> {
-    #[cfg(not(feature = "high-spec"))]
-    let _ = show_avatar;
     let mut action = None;
 
     ui.horizontal_wrapped(|ui| {
@@ -73,12 +73,9 @@ fn show_toolbar(
                 .color(ui.visuals().strong_text_color()),
         );
 
-        #[cfg(feature = "high-spec")]
-        {
-            ui.separator();
-            ui.selectable_value(show_avatar, false, "Metrics");
-            ui.selectable_value(show_avatar, true, "Character");
-        }
+        ui.separator();
+        ui.selectable_value(show_avatar, false, "Metrics");
+        ui.selectable_value(show_avatar, true, "Character");
         ui.label(
             RichText::new(format!("via {} / {}", node.endpoint, node.service))
                 .monospace()
@@ -93,9 +90,8 @@ fn detail_page_data<'a>(
     state: &'a DashboardState,
     key: &str,
     show_avatar: bool,
+    avatar_model: &'a AvatarModelCache,
 ) -> Option<DetailPageData<'a>> {
-    #[cfg(not(feature = "high-spec"))]
-    let _ = show_avatar;
     let node = state.nodes().get(key)?;
     let metrics = state
         .metrics()
@@ -113,8 +109,11 @@ fn detail_page_data<'a>(
         metrics,
         state.metric_history(),
         state.alerts(),
-        #[cfg(feature = "high-spec")]
-        show_avatar,
+        CharacterPanelData {
+            profile: state.avatar_profile(),
+            model: avatar_model,
+            visible: show_avatar,
+        },
     );
 
     Some(DetailPageData { panels, events })

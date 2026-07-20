@@ -51,6 +51,10 @@ fn same_metric_from_different_listeners_alerts_independently() {
     assert!(alerts.observe_metric(&first).is_some());
     assert!(alerts.observe_metric(&second).is_some());
     assert_eq!(alerts.summary().active_count, 2);
+    assert_eq!(
+        alerts.active_count_for_presenter("127.0.0.1:9000", "agent@127.0.0.1:9000"),
+        1
+    );
 
     let recovered = sample_at("system.cpu.usage", 12.0, "12", "127.0.0.1:9000");
     let change = alerts.observe_metric(&recovered).expect("first resolved");
@@ -58,9 +62,48 @@ fn same_metric_from_different_listeners_alerts_independently() {
     assert_eq!(change.transition, AlertTransition::Resolved);
     assert_eq!(alerts.summary().active_count, 1);
     assert_eq!(
+        alerts.active_count_for_presenter("127.0.0.1:9000", "agent@127.0.0.1:9000"),
+        0
+    );
+    assert_eq!(
         alerts.highest_for_node("127.0.0.1:9001", "agent@127.0.0.1:9001"),
         Some(AlertSeverity::Warning)
     );
+}
+
+#[test]
+fn receiver_error_applies_to_every_model_on_that_listener_only() {
+    let mut alerts = AlertStore::default();
+    alerts.observe_receiver_error("127.0.0.1:9000", "listener failed");
+
+    assert_eq!(
+        alerts.highest_for_presenter("127.0.0.1:9000", "agent-a"),
+        Some(AlertSeverity::Critical)
+    );
+    assert_eq!(
+        alerts.active_count_for_presenter("127.0.0.1:9000", "agent-b"),
+        1
+    );
+    assert_eq!(
+        alerts.highest_for_presenter("127.0.0.1:9001", "agent-c"),
+        None
+    );
+}
+
+#[test]
+fn extension_error_does_not_change_a_server_presenter() {
+    let mut alerts = AlertStore::default();
+    alerts.observe_extension_error("sidecar failed");
+
+    assert_eq!(
+        alerts.highest_for_presenter("127.0.0.1:9000", "agent-a"),
+        None
+    );
+    assert_eq!(
+        alerts.active_count_for_presenter("127.0.0.1:9000", "agent-a"),
+        0
+    );
+    assert_eq!(alerts.summary().active_count, 1);
 }
 
 fn sample(name: &str, numeric: f64, value: &str) -> MetricSample {
