@@ -4,9 +4,10 @@
 
 Draft
 
-2026-07-20 구현 메모: native `high-spec`의 정적 VRM 0.x/1.0 mesh/rest-skin/base-color renderer와
-`idle`/`warning`/`critical` viewport motion은 구현됐다. 이 RFC의 expression, SpringBone, MToon 전체,
-VRMA, `Notice`/`Relieved` one-shot 범위는 여전히 Draft다.
+2026-07-21 구현 메모: native `high-spec`의 VRM 0.x/1.0 mesh/GPU skinning, MToon factor와
+shade/normal/matcap/rim/outline-width map, expression morph, pointer lookAt, node constraint,
+SpringBone과 embedded/다중 VRMA clip crossfade가 구현됐다. material/texture-transform expression,
+alert-state clip 선택 및 `Notice`/`Relieved` one-shot 범위는 여전히 Draft다.
 
 ## 목표
 
@@ -54,11 +55,12 @@ VRM 1.0에서 핵심 확장은 다음이다.
 - glTF/GLB loader를 통해 mesh, node hierarchy, skin, texture를 읽을 수 있는 구조를 둔다.
 - `VRMC_vrm.meta`와 `VRMC_vrm.humanoid`를 파싱해 avatar 정보와 humanoid bone mapping을 확인한다.
 - 알람 severity를 avatar state로 매핑한다.
-- MToon, SpringBone, VRMA는 fallback 가능한 후속 단계로 둔다.
+- MToon/VRMA는 제한된 native prototype으로 구현하고, 미지원 texture/runtime 항목은 안전하게 fallback한다.
 
-현재 runtime은 위 범위 중 mesh, node hierarchy, rest-pose skinning, embedded base-color texture,
-meta/humanoid 검증과 severity mapping을 구현했다. MToon 고유 shading, expression morph, SpringBone,
-constraint/lookAt, VRMA/glTF animation은 실행하지 않는다.
+현재 runtime은 mesh, node hierarchy, texture, meta/humanoid 검증, GPU skinning, expression morph,
+bone/expression lookAt, roll/aim/rotation constraint, SpringBone sphere/capsule/center, MToon 전용 map과
+여러 embedded/VRMA clip의 순차 crossfade를 실행한다. clip sequence는 alert state와 무관하게 반복되며
+material/texture-transform expression bind와 상태별 clip 선택은 실행하지 않는다.
 
 ## 상태 매핑
 
@@ -73,8 +75,8 @@ constraint/lookAt, VRMA/glTF animation은 실행하지 않는다.
 아바타 state는 최고 severity의 활성 알람을 기준으로 한다.
 여러 알람이 동시에 있으면 `critical > warning > info` 순으로 우선한다.
 
-현재 runtime state는 `Idle`, `Concerned`, `Urgent`만 사용한다. `Notice`, `Relieved`와 expression/pose
-mapping은 구현 완료로 간주하지 않는다.
+현재 runtime state는 `Idle`, `Concerned`, `Urgent`만 사용하며 각 상태는 설정한 VRM expression 이름을
+적용한다. `Notice`, `Relieved`와 skeletal clip/pose mapping은 구현 완료로 간주하지 않는다.
 
 ## UI 배치
 
@@ -99,8 +101,8 @@ mapping은 구현 완료로 간주하지 않는다.
 
 - VRM 파일이 없으면 built-in placeholder avatar state를 사용한다.
 - VRM extension/meta/humanoid 검증이 실패한 일반 GLB나 손상 파일은 표시하지 않고 fallback한다.
-- MToon을 구현하지 못한 material은 glTF PBR 또는 unlit fallback을 사용한다.
-- SpringBone을 구현하지 않아도 알람 표현은 bounded viewport motion과 말풍선으로 동작해야 한다.
+- MToon extension이 없거나 미지원 texture property는 glTF base-color/factor fallback을 사용한다.
+- SpringBone을 끄거나 해당 데이터가 없어도 알람 표현은 bounded viewport motion과 말풍선으로 동작한다.
 
 ## 데이터 구조 초안
 
@@ -134,6 +136,6 @@ pub(crate) struct AvatarPresenterInput {
 
 - 기본 bundled avatar asset을 둘지는 모델 재배포 라이선스를 확인한 뒤 결정해야 한다. 현재는 사용자
   파일만 허용한다.
-- expression/MToon/SpringBone/VRMA를 native renderer에 넣을지 Unity companion으로 둘지 결정해야 한다.
+- material/texture-transform expression bind, 상태별 clip 선택과 one-shot transition을 native renderer에 넣을지 결정해야 한다.
 - browser VRM binary를 tenant별 IndexedDB/OPFS에 영속화할지 결정해야 한다.
 - avatar 음성 안내를 넣을지, 화면 메시지만 둘지 결정해야 한다.

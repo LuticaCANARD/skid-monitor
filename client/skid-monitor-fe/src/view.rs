@@ -1,5 +1,5 @@
 use crate::components::{
-    avatar::AvatarModelCache,
+    avatar::{self, AvatarModelCache},
     counters, header,
     layout::{
         ContentLayout, LayoutMode, PanelLimits, centered_content, remaining_height, section_gap,
@@ -20,6 +20,7 @@ pub(crate) struct ControlRoomUiState {
     selected_node_key: Option<String>,
     overview: OverviewState,
     settings_open: bool,
+    character_preview_open: bool,
     show_avatar: bool,
     settings: UiSettings,
     avatar_model: AvatarModelCache,
@@ -37,11 +38,13 @@ impl ControlRoomUiState {
         settings.apply_visuals(ctx);
         let mut avatar_model = AvatarModelCache::default();
         avatar_model.sync(ctx, avatar_profile);
+        let character_preview_open = !avatar_profile.model_path.trim().is_empty();
 
         Self {
             selected_node_key: None,
             overview: OverviewState::default(),
             settings_open: false,
+            character_preview_open,
             show_avatar: false,
             settings,
             avatar_model,
@@ -157,6 +160,9 @@ impl<'a> ControlRoomView<'a> {
         if self.ui_state.settings_open {
             self.show_settings_window(ui.ctx());
         }
+        if self.ui_state.character_preview_open {
+            self.show_character_preview(ui.ctx());
+        }
     }
 
     fn current_selected_key(&self) -> Option<String> {
@@ -230,9 +236,67 @@ impl<'a> ControlRoomView<'a> {
                 self.ui_state.settings.reject_avatar_profile(error.clone());
                 self.state
                     .push_settings_error(format!("character profile rejected: {error}"));
-            } else if self.state.avatar_profile_save_pending() {
-                ctx.request_repaint_after(Duration::from_millis(50));
+            } else {
+                if self.state.avatar_profile_save_pending() {
+                    ctx.request_repaint_after(Duration::from_millis(50));
+                }
+                if changes.preview_character {
+                    self.ui_state.character_preview_open = true;
+                }
             }
         }
+    }
+
+    fn show_character_preview(&mut self, ctx: &egui::Context) {
+        let nodes = self.state.nodes().values().take(1).collect::<Vec<_>>();
+        let input = avatar::AvatarPresenterInput::for_node(
+            &nodes,
+            self.state.alerts(),
+            self.state.avatar_profile(),
+        );
+        let mut preview_open = self.ui_state.character_preview_open;
+        egui::Window::new("Character preview")
+            .id(egui::Id::new("character-preview-window"))
+            .open(&mut preview_open)
+            .collapsible(false)
+            .resizable(true)
+            .default_size(egui::vec2(420.0, 560.0))
+            .min_size(egui::vec2(300.0, 360.0))
+            .show(ctx, |ui| {
+                let panel_width = ui.available_width().clamp(280.0, 520.0);
+                let panel_height = ui.available_height().clamp(320.0, 620.0);
+                avatar::show(
+                    ui,
+                    panel_width,
+                    panel_height,
+                    input,
+                    &self.ui_state.avatar_model,
+                );
+            });
+        self.ui_state.character_preview_open = preview_open;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn custom_character_profile_opens_preview_on_startup() {
+        let ctx = egui::Context::default();
+        let mut profile = AvatarReactionProfile::default();
+        profile.model_path = "/tmp/operator.vrm".to_string();
+
+        let ui_state = ControlRoomUiState::new(&ctx, &profile, 0, 0);
+
+        assert!(ui_state.character_preview_open);
+    }
+
+    #[test]
+    fn built_in_character_does_not_force_preview_on_startup() {
+        let ctx = egui::Context::default();
+        let ui_state = ControlRoomUiState::new(&ctx, &AvatarReactionProfile::default(), 0, 0);
+
+        assert!(!ui_state.character_preview_open);
     }
 }

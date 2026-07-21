@@ -26,6 +26,14 @@ pub(crate) struct AvatarPresenterInput {
     model_name: String,
     message: String,
     motion: AvatarMotion,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+    expression: String,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+    animation_crossfade_seconds: f32,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+    spring_bone_enabled: bool,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+    look_at_enabled: bool,
     active_alert_count: usize,
 }
 
@@ -49,6 +57,14 @@ impl AvatarPresenterInput {
             model_name: profile.model_name.clone(),
             message: action.message.clone(),
             motion: action.motion,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+            expression: action.expression.clone(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+            animation_crossfade_seconds: profile.animation_crossfade_seconds,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+            spring_bone_enabled: profile.spring_bone_enabled,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+            look_at_enabled: profile.look_at_enabled,
             active_alert_count,
         }
     }
@@ -90,6 +106,13 @@ pub(crate) fn show(
                         .small()
                         .color(ui.visuals().weak_text_color()),
                 );
+                if let Some(animation) = model.animation_label() {
+                    ui.label(
+                        RichText::new(format!("+ {animation}"))
+                            .small()
+                            .color(ui.visuals().weak_text_color()),
+                    );
+                }
             }
             ui.add(egui::Label::new(&input.model_name).truncate())
                 .on_hover_text(&input.model_name);
@@ -109,7 +132,32 @@ pub(crate) fn show(
         let character_rect = motion_rect(rect, input.motion, time);
         #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
         if let Some(scene) = model.vrm_scene() {
-            vrm::paint(&painter, character_rect.shrink(12.0), scene.clone());
+            if scene.needs_continuous_update() {
+                ui.ctx().request_repaint_after(MOTION_FRAME_INTERVAL);
+            }
+            let (look_yaw_degrees, look_pitch_degrees) = ui
+                .ctx()
+                .pointer_hover_pos()
+                .filter(|pointer| rect.contains(*pointer))
+                .map_or((0.0, 0.0), |pointer| {
+                    let horizontal =
+                        ((pointer.x - rect.center().x) / (rect.width() * 0.5)).clamp(-1.0, 1.0);
+                    let vertical =
+                        ((pointer.y - rect.center().y) / (rect.height() * 0.5)).clamp(-1.0, 1.0);
+                    (-horizontal * 45.0, vertical * 30.0)
+                });
+            vrm::paint(
+                &painter,
+                character_rect.shrink(12.0),
+                scene.clone(),
+                time as f32,
+                &input.expression,
+                input.animation_crossfade_seconds,
+                look_yaw_degrees,
+                look_pitch_degrees,
+                input.spring_bone_enabled,
+                input.look_at_enabled,
+            );
         } else {
             vrm::clear(&painter, character_rect);
             if let Some(image) = model.image() {

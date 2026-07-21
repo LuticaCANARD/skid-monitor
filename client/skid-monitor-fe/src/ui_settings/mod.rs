@@ -30,6 +30,7 @@ pub(crate) struct UiSettings {
 pub(crate) struct SettingsChanges {
     pub(crate) alerts_enabled: Option<bool>,
     pub(crate) avatar_profile: Option<AvatarReactionProfile>,
+    pub(crate) preview_character: bool,
 }
 
 impl Default for UiSettings {
@@ -98,9 +99,33 @@ impl UiSettings {
     }
 
     pub(crate) fn load_dropped_assets(&mut self, ctx: &egui::Context) {
-        if let Some(path) = dropped_vrm_path(ctx) {
+        let mut loaded_character_asset = false;
+        if let Some(path) = dropped_asset_path(ctx, "vrm") {
             self.avatar_draft.model_path = path;
             self.avatar_profile_error = None;
+            loaded_character_asset = true;
+        }
+        let dropped_animations = dropped_asset_paths(ctx, "vrma");
+        if !dropped_animations.is_empty() {
+            loaded_character_asset = true;
+            for path in dropped_animations {
+                if self.avatar_draft.animation_paths.contains(&path) {
+                    continue;
+                }
+                if self.avatar_draft.animation_paths.len()
+                    >= crate::model::MAX_AVATAR_ANIMATION_PATHS
+                {
+                    self.avatar_profile_error = Some(format!(
+                        "at most {} VRMA files are supported",
+                        crate::model::MAX_AVATAR_ANIMATION_PATHS
+                    ));
+                    break;
+                }
+                self.avatar_draft.animation_paths.push(path);
+                self.avatar_profile_error = None;
+            }
+        }
+        if loaded_character_asset {
             return;
         }
         if let Some(path) = dropped_image_path(ctx) {
@@ -148,18 +173,25 @@ impl UiSettings {
     }
 }
 
-fn dropped_vrm_path(ctx: &egui::Context) -> Option<String> {
+fn dropped_asset_path(ctx: &egui::Context, expected_extension: &str) -> Option<String> {
+    dropped_asset_paths(ctx, expected_extension)
+        .into_iter()
+        .next()
+}
+
+fn dropped_asset_paths(ctx: &egui::Context, expected_extension: &str) -> Vec<String> {
     ctx.input(|input| {
         input
             .raw
             .dropped_files
             .iter()
             .filter_map(|file| file.path.as_ref())
-            .find(|path| {
+            .filter(|path| {
                 path.extension()
                     .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("vrm"))
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case(expected_extension))
             })
             .map(|path| path.display().to_string())
+            .collect()
     })
 }

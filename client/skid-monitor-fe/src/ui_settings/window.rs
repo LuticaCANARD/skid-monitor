@@ -144,7 +144,7 @@ impl UiSettings {
         #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
         ui.label(
             RichText::new(
-                "Drop a .vrm file anywhere or enter its path. VRM 0.x/1.0 loads as a static 3D avatar.",
+                "Drop a .vrm file anywhere or enter its path. VRM 0.x/1.0 loads in the native 3D viewport.",
             )
             .small(),
         );
@@ -163,6 +163,51 @@ impl UiSettings {
             ui.label(RichText::new(error).color(config::STATUS_ERROR_COLOR));
         }
 
+        ui.label("Optional VRMA animation files");
+        let mut remove_animation = None;
+        for (index, path) in self.avatar_draft.animation_paths.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(path)
+                        .desired_width(360.0)
+                        .hint_text("path to a .vrma file"),
+                );
+                if ui.button("Remove").clicked() {
+                    remove_animation = Some(index);
+                }
+            });
+        }
+        if let Some(index) = remove_animation {
+            self.avatar_draft.animation_paths.remove(index);
+        }
+        if self.avatar_draft.animation_paths.len() < crate::model::MAX_AVATAR_ANIMATION_PATHS
+            && ui.button("Add VRMA clip").clicked()
+        {
+            self.avatar_draft.animation_paths.push(String::new());
+        }
+        ui.horizontal(|ui| {
+            ui.label("Clip crossfade");
+            ui.add(
+                egui::Slider::new(
+                    &mut self.avatar_draft.animation_crossfade_seconds,
+                    0.0..=2.0,
+                )
+                .suffix(" s"),
+            );
+            ui.checkbox(
+                &mut self.avatar_draft.spring_bone_enabled,
+                "SpringBone physics",
+            );
+            ui.checkbox(&mut self.avatar_draft.look_at_enabled, "Pointer look-at");
+        });
+        #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+        ui.label(
+            RichText::new(
+                "Drop one or more .vrma files. All clips are FK-retargeted and crossfaded by the runtime mixer; an empty list uses embedded glTF clips.",
+            )
+            .small(),
+        );
+
         ui.add_space(config::SECTION_GAP);
         show_action_editor(ui, "idle", "Healthy", &mut self.avatar_draft.idle);
         show_action_editor(ui, "warning", "Warning", &mut self.avatar_draft.warning);
@@ -173,12 +218,13 @@ impl UiSettings {
         }
 
         ui.horizontal(|ui| {
-            if ui.button("Apply character profile").clicked() {
+            if ui.button("Apply & preview character").clicked() {
                 match self.avatar_draft.clone().normalized() {
                     Ok(profile) => {
                         self.avatar_draft = profile.clone();
                         self.avatar_profile_error = None;
                         changes.avatar_profile = Some(profile);
+                        changes.preview_character = true;
                     }
                     Err(error) => self.avatar_profile_error = Some(error),
                 }
@@ -218,6 +264,12 @@ fn show_action_editor(ui: &mut egui::Ui, id: &str, label: &str, action: &mut Ava
             egui::TextEdit::singleline(&mut action.message)
                 .desired_width(440.0)
                 .hint_text("optional speech bubble text"),
+        );
+        ui.label("VRM expression");
+        ui.add(
+            egui::TextEdit::singleline(&mut action.expression)
+                .desired_width(240.0)
+                .hint_text("preset or custom name, e.g. happy"),
         );
     });
 }

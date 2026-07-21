@@ -133,8 +133,9 @@ impl DashboardState {
     }
 
     fn commit_avatar_profile(&mut self, profile: AvatarReactionProfile) {
-        let reload_model =
-            self.avatar_profile.model_path != profile.model_path || self.avatar_profile == profile;
+        let reload_model = self.avatar_profile.model_path != profile.model_path
+            || self.avatar_profile.animation_paths != profile.animation_paths
+            || self.avatar_profile == profile;
         if self.avatar_profile == profile {
             self.push_event("settings", "character reaction profile saved");
         } else {

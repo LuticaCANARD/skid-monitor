@@ -58,8 +58,9 @@ Open **Settings > Character reactions** to configure the character shown for a
 selected server node.
 
 - Set a character name and, in the native client, an optional `.png`, `.jpg`,
-  `.jpeg`, or `.vrm` model path. You can also drop a `.vrm` file onto the native
-  window and then apply the draft. An empty path uses the built-in character.
+  `.jpeg`, or `.vrm` model path. A VRM can also use an optional `.vrma` animation
+  path. You can drop either file onto the native window and then apply the
+  draft. An empty model path uses the built-in character.
 - Configure the `idle`, `warning`, and `critical` actions independently.
 - Each action selects one bounded UI motion: `Still`, `Pulse`, `Bounce`, or
   `Shake`, plus an optional custom speech-bubble message.
@@ -80,18 +81,27 @@ server's Character state. Repeated samples for an already-firing alert do not
 create a new reaction transition.
 
 The native `high-spec` build validates VRM 1.0 and legacy VRM 0.x GLB files and
-renders embedded meshes, node transforms, rest-pose skinning, and base-color
-textures in a depth-enabled WGPU viewport:
+renders embedded meshes, node transforms, base-color textures, MToon core
+material factors and dedicated shade/normal/matcap/rim/outline-width maps, and
+GPU skinning in a depth-enabled WGPU viewport. It evaluates VRM expression
+morphs, pointer-driven bone/expression look-at, roll/aim/rotation constraints,
+and SpringBone sphere/capsule physics. Embedded glTF clips and up to eight
+configured `.vrma` files are played as a looping sequence with configurable
+crossfades and humanoid FK retargeting:
 
 ```sh
 cargo run -p skid-monitor-fe --no-default-features --features high-spec
 ```
 
 The default `low-spec` build does not include the VRM/glTF renderer and uses the
-built-in fallback for `.vrm` paths. The current VRM renderer is a static rest-pose
-preview: `Still`/`Pulse`/`Bounce`/`Shake` transform the bounded viewport rather
-than running skeletal clips. MToon-specific shading, expressions, SpringBone,
-look-at/constraints, glTF animation, VRMA, and arbitrary scripts are not run.
+built-in fallback for `.vrm` paths. `Still`/`Pulse`/`Bounce`/`Shake` still
+transform the bounded viewport; the configured clip sequence loops independently
+rather than being selected by alert state. The native player supports STEP,
+LINEAR, and CUBICSPLINE node TRS channels, VRMA humanoid rotations, and hips
+translation. Per-state expression names are configurable and missing names are
+a safe no-op. Material-color/texture-transform expression binds, MToon
+shading-shift/UV-animation mask textures, alert-state clip selection, root-motion
+policy, and arbitrary scripts are not implemented.
 VRM 1.0 requires valid `name`, non-empty `authors`, `licenseUrl`, and required
 humanoid bone bindings; the legacy 0.0 extension uses its own required bone set.
 External buffer/image URIs and unsupported required glTF extensions are rejected. See
