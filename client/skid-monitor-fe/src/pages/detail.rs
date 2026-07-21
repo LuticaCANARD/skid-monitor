@@ -128,7 +128,7 @@ fn show_resizable_content(
     data: DetailPageData<'_>,
 ) {
     let gap = crate::components::layout::section_gap(ui);
-    let main_min = main_panels::minimum_height(layout, gap);
+    let main_min = main_panels::minimum_height(layout, gap, data.panels.has_database_metrics());
     let event_min = config::EVENT_LOG_HEIGHT_MIN;
     let available = (limits.main_height + limits.event_log_height).max(main_min + event_min);
     let id = ui.make_persistent_id("detail-main-event-flex");

@@ -1,5 +1,6 @@
 mod appearance;
 mod background;
+mod character_window;
 mod window;
 
 #[cfg(test)]

@@ -77,7 +77,8 @@ pub(crate) fn status_badge(ui: &mut egui::Ui, status: &Status) {
             config::STATUS_BADGE_MARGIN_Y,
         ))
         .show(ui, |ui| {
-            let response = ui.label(RichText::new(&label).monospace().color(color));
+            let response =
+                ui.add(egui::Label::new(RichText::new(&label).monospace().color(color)).extend());
             if label != full_label {
                 response.on_hover_text(full_label);
             }
@@ -105,7 +106,7 @@ pub(crate) fn alert_badge(ui: &mut egui::Ui, summary: AlertSummary) {
             config::ALERT_BADGE_MARGIN_Y,
         ))
         .show(ui, |ui| {
-            ui.label(RichText::new(label).monospace().color(color));
+            ui.add(egui::Label::new(RichText::new(label).monospace().color(color)).extend());
         });
 }
 
@@ -140,7 +141,9 @@ pub(crate) fn summary_chip(
             config::SUMMARY_CHIP_MARGIN_Y,
         ))
         .show(ui, |ui| {
-            let response = ui.label(RichText::new(label).monospace().small().color(color));
+            let response = ui.add(
+                egui::Label::new(RichText::new(label).monospace().small().color(color)).extend(),
+            );
             if let Some(tooltip) = tooltip {
                 response.on_hover_text(tooltip);
             }
