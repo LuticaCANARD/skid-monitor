@@ -1,4 +1,5 @@
 mod animation;
+mod custom_shader;
 mod loader;
 mod renderer;
 mod runtime;
@@ -11,9 +12,10 @@ pub(super) use loader::CpuVrmScene;
 pub(super) fn decode(
     path: &str,
     animation_paths: &[String],
+    shader_path: &str,
     scene_id: u64,
 ) -> Result<CpuVrmScene, String> {
-    loader::decode(path, animation_paths, scene_id)
+    loader::decode(path, animation_paths, shader_path, scene_id)
 }
 
 pub(super) fn install(cc: &eframe::CreationContext<'_>) -> bool {

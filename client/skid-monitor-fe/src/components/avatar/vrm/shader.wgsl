@@ -265,9 +265,27 @@ fn gamma_from_linear_rgb(rgb: vec3<f32>) -> vec3<f32> {
     return select(higher, lower, cutoff);
 }
 
+// SKID_CUSTOM_MATERIAL_BEGIN
+fn skid_custom_material(
+    color: vec4<f32>,
+    normal: vec3<f32>,
+    uv: vec2<f32>,
+    world_position: vec3<f32>,
+    time: f32,
+) -> vec4<f32> {
+    return color;
+}
+// SKID_CUSTOM_MATERIAL_END
+
 @fragment
 fn fs_main_linear_framebuffer(input: VertexOutput) -> @location(0) vec4<f32> {
-    let color = shaded_color(input);
+    let color = skid_custom_material(
+        shaded_color(input),
+        surface_normal(input),
+        input.uv,
+        input.world_position,
+        scene.animation.x,
+    );
     if material.alpha.y > 0.5 && color.a < material.alpha.x {
         discard;
     }
@@ -276,7 +294,13 @@ fn fs_main_linear_framebuffer(input: VertexOutput) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_main_gamma_framebuffer(input: VertexOutput) -> @location(0) vec4<f32> {
-    let color = shaded_color(input);
+    let color = skid_custom_material(
+        shaded_color(input),
+        surface_normal(input),
+        input.uv,
+        input.world_position,
+        scene.animation.x,
+    );
     if material.alpha.y > 0.5 && color.a < material.alpha.x {
         discard;
     }

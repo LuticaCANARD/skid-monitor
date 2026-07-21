@@ -58,11 +58,8 @@ struct VrmCallback {
 struct VrmClearCallback;
 
 struct VrmRenderResources {
-    opaque_pipeline: wgpu::RenderPipeline,
-    blend_pipeline: wgpu::RenderPipeline,
-    blend_depth_write_pipeline: wgpu::RenderPipeline,
-    outline_pipeline: wgpu::RenderPipeline,
-    outline_reversed_pipeline: wgpu::RenderPipeline,
+    pipeline_layout: wgpu::PipelineLayout,
+    target_format: wgpu::TextureFormat,
     material_bind_group_layout: wgpu::BindGroupLayout,
     pose_bind_group_layout: wgpu::BindGroupLayout,
     scene_uniform_buffer: wgpu::Buffer,
@@ -78,6 +75,15 @@ struct GpuScene {
     _textures: Vec<GpuTexture>,
     reversed_front_face: bool,
     runtime: VrmRuntimeState,
+    pipelines: VrmPipelines,
+}
+
+struct VrmPipelines {
+    opaque: wgpu::RenderPipeline,
+    blend: wgpu::RenderPipeline,
+    blend_depth_write: wgpu::RenderPipeline,
+    outline: wgpu::RenderPipeline,
+    outline_reversed: wgpu::RenderPipeline,
 }
 
 struct GpuDraw {
@@ -433,90 +439,6 @@ impl VrmRenderResources {
             ],
             immediate_size: 0,
         });
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("skid-vrm-shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
-        });
-        let fragment_entry = if target_format.is_srgb() {
-            "fs_main_linear_framebuffer"
-        } else {
-            "fs_main_gamma_framebuffer"
-        };
-        let opaque_pipeline = create_pipeline(
-            device,
-            &pipeline_layout,
-            &shader,
-            target_format,
-            PipelineConfig {
-                vertex_entry: "vs_main",
-                fragment_entry,
-                blend: None,
-                depth_write_enabled: true,
-                cull_mode: None,
-                label: "skid-vrm-opaque-pipeline",
-            },
-        );
-        let blend_pipeline = create_pipeline(
-            device,
-            &pipeline_layout,
-            &shader,
-            target_format,
-            PipelineConfig {
-                vertex_entry: "vs_main",
-                fragment_entry,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                depth_write_enabled: false,
-                cull_mode: None,
-                label: "skid-vrm-blend-pipeline",
-            },
-        );
-        let blend_depth_write_pipeline = create_pipeline(
-            device,
-            &pipeline_layout,
-            &shader,
-            target_format,
-            PipelineConfig {
-                vertex_entry: "vs_main",
-                fragment_entry,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                depth_write_enabled: true,
-                cull_mode: None,
-                label: "skid-vrm-blend-depth-write-pipeline",
-            },
-        );
-        let outline_fragment_entry = if target_format.is_srgb() {
-            "fs_outline_linear_framebuffer"
-        } else {
-            "fs_outline_gamma_framebuffer"
-        };
-        let outline_pipeline = create_pipeline(
-            device,
-            &pipeline_layout,
-            &shader,
-            target_format,
-            PipelineConfig {
-                vertex_entry: "vs_outline",
-                fragment_entry: outline_fragment_entry,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                depth_write_enabled: true,
-                cull_mode: Some(wgpu::Face::Front),
-                label: "skid-vrm-outline-pipeline",
-            },
-        );
-        let outline_reversed_pipeline = create_pipeline(
-            device,
-            &pipeline_layout,
-            &shader,
-            target_format,
-            PipelineConfig {
-                vertex_entry: "vs_outline",
-                fragment_entry: outline_fragment_entry,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                depth_write_enabled: true,
-                cull_mode: Some(wgpu::Face::Back),
-                label: "skid-vrm-outline-reversed-pipeline",
-            },
-        );
         let scene_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("skid-vrm-scene-uniform"),
             contents: bytemuck::bytes_of(&SceneUniform::zeroed()),
@@ -532,11 +454,8 @@ impl VrmRenderResources {
         });
 
         Self {
-            opaque_pipeline,
-            blend_pipeline,
-            blend_depth_write_pipeline,
-            outline_pipeline,
-            outline_reversed_pipeline,
+            pipeline_layout,
+            target_format,
             material_bind_group_layout,
             pose_bind_group_layout,
             scene_uniform_buffer,
@@ -684,6 +603,17 @@ impl VrmRenderResources {
                 .cmp(&right_queue)
                 .then_with(|| left.sort_depth.total_cmp(&right.sort_depth))
         });
+        let shader_source = scene
+            .custom_shader_source
+            .as_deref()
+            .unwrap_or(include_str!("shader.wgsl"));
+        let pipelines = VrmPipelines::new(
+            device,
+            &self.pipeline_layout,
+            self.target_format,
+            shader_source,
+            scene.custom_shader_source.is_some(),
+        );
         GpuScene {
             scene_id: scene.scene_id,
             vertex_buffer,
@@ -692,6 +622,7 @@ impl VrmRenderResources {
             _textures: textures,
             reversed_front_face: scene.front_direction < 0.0,
             runtime: VrmRuntimeState::default(),
+            pipelines,
         }
     }
 
@@ -703,9 +634,9 @@ impl VrmRenderResources {
         render_pass.set_vertex_buffer(0, scene.vertex_buffer.slice(..));
 
         render_pass.set_pipeline(if scene.reversed_front_face {
-            &self.outline_reversed_pipeline
+            &scene.pipelines.outline_reversed
         } else {
-            &self.outline_pipeline
+            &scene.pipelines.outline
         });
         for draw in &scene.draws {
             let Some(material) = scene.materials.get(draw.material_index) else {
@@ -719,7 +650,7 @@ impl VrmRenderResources {
             render_pass.draw(draw.vertices.clone(), 0..1);
         }
 
-        render_pass.set_pipeline(&self.opaque_pipeline);
+        render_pass.set_pipeline(&scene.pipelines.opaque);
         for draw in &scene.draws {
             let Some(material) = scene.materials.get(draw.material_index) else {
                 continue;
@@ -732,7 +663,7 @@ impl VrmRenderResources {
             render_pass.draw(draw.vertices.clone(), 0..1);
         }
 
-        render_pass.set_pipeline(&self.blend_depth_write_pipeline);
+        render_pass.set_pipeline(&scene.pipelines.blend_depth_write);
         for draw in &scene.draws {
             let Some(material) = scene.materials.get(draw.material_index) else {
                 continue;
@@ -745,7 +676,7 @@ impl VrmRenderResources {
             render_pass.draw(draw.vertices.clone(), 0..1);
         }
 
-        render_pass.set_pipeline(&self.blend_pipeline);
+        render_pass.set_pipeline(&scene.pipelines.blend);
         for draw in &scene.draws {
             let Some(material) = scene.materials.get(draw.material_index) else {
                 continue;
@@ -756,6 +687,107 @@ impl VrmRenderResources {
             render_pass.set_bind_group(1, &material.bind_group, &[]);
             render_pass.set_bind_group(2, &draw.pose_bind_group, &[]);
             render_pass.draw(draw.vertices.clone(), 0..1);
+        }
+    }
+}
+
+impl VrmPipelines {
+    fn new(
+        device: &wgpu::Device,
+        layout: &wgpu::PipelineLayout,
+        target_format: wgpu::TextureFormat,
+        source: &str,
+        custom: bool,
+    ) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some(if custom {
+                "skid-vrm-custom-shader"
+            } else {
+                "skid-vrm-shader"
+            }),
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+        let fragment_entry = if target_format.is_srgb() {
+            "fs_main_linear_framebuffer"
+        } else {
+            "fs_main_gamma_framebuffer"
+        };
+        let outline_fragment_entry = if target_format.is_srgb() {
+            "fs_outline_linear_framebuffer"
+        } else {
+            "fs_outline_gamma_framebuffer"
+        };
+        Self {
+            opaque: create_pipeline(
+                device,
+                layout,
+                &shader,
+                target_format,
+                PipelineConfig {
+                    vertex_entry: "vs_main",
+                    fragment_entry,
+                    blend: None,
+                    depth_write_enabled: true,
+                    cull_mode: None,
+                    label: "skid-vrm-opaque-pipeline",
+                },
+            ),
+            blend: create_pipeline(
+                device,
+                layout,
+                &shader,
+                target_format,
+                PipelineConfig {
+                    vertex_entry: "vs_main",
+                    fragment_entry,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    depth_write_enabled: false,
+                    cull_mode: None,
+                    label: "skid-vrm-blend-pipeline",
+                },
+            ),
+            blend_depth_write: create_pipeline(
+                device,
+                layout,
+                &shader,
+                target_format,
+                PipelineConfig {
+                    vertex_entry: "vs_main",
+                    fragment_entry,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    depth_write_enabled: true,
+                    cull_mode: None,
+                    label: "skid-vrm-blend-depth-write-pipeline",
+                },
+            ),
+            outline: create_pipeline(
+                device,
+                layout,
+                &shader,
+                target_format,
+                PipelineConfig {
+                    vertex_entry: "vs_outline",
+                    fragment_entry: outline_fragment_entry,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    depth_write_enabled: true,
+                    cull_mode: Some(wgpu::Face::Front),
+                    label: "skid-vrm-outline-pipeline",
+                },
+            ),
+            outline_reversed: create_pipeline(
+                device,
+                layout,
+                &shader,
+                target_format,
+                PipelineConfig {
+                    vertex_entry: "vs_outline",
+                    fragment_entry: outline_fragment_entry,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    depth_write_enabled: true,
+                    cull_mode: Some(wgpu::Face::Back),
+                    label: "skid-vrm-outline-reversed-pipeline",
+                },
+            ),
         }
     }
 }
@@ -1067,6 +1099,24 @@ mod tests {
         };
         let error_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let resources = VrmRenderResources::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+        let _default_pipelines = VrmPipelines::new(
+            &device,
+            &resources.pipeline_layout,
+            resources.target_format,
+            include_str!("shader.wgsl"),
+            false,
+        );
+        let custom_source = super::super::custom_shader::compose(include_str!(
+            "../../../../examples/custom-material.wgsl"
+        ))
+        .expect("compose example custom material shader");
+        let _custom_pipelines = VrmPipelines::new(
+            &device,
+            &resources.pipeline_layout,
+            resources.target_format,
+            &custom_source,
+            true,
+        );
         let textures = vec![
             upload_texture(&device, &queue, 1, 1, &[255, 255, 255, 255]),
             upload_texture(&device, &queue, 1, 1, &[255, 255, 255, 255]),

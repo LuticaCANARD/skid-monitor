@@ -2,7 +2,7 @@ use super::AlertSeverity;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-const PROFILE_SCHEMA_VERSION: u32 = 3;
+const PROFILE_SCHEMA_VERSION: u32 = 4;
 const MAX_MODEL_NAME_CHARS: usize = 64;
 const MAX_MODEL_PATH_CHARS: usize = 4096;
 const MAX_MESSAGE_CHARS: usize = 160;
@@ -62,6 +62,8 @@ pub(crate) struct AvatarReactionProfile {
     pub(crate) animation_path: String,
     /// Optional VRM Animation (`.vrma`) layers. Every clip is available to the mixer.
     pub(crate) animation_paths: Vec<String>,
+    /// Optional bounded WGSL material hook for native high-spec VRM rendering.
+    pub(crate) shader_path: String,
     pub(crate) animation_crossfade_seconds: f32,
     pub(crate) spring_bone_enabled: bool,
     pub(crate) look_at_enabled: bool,
@@ -78,6 +80,7 @@ impl Default for AvatarReactionProfile {
             model_path: String::new(),
             animation_path: String::new(),
             animation_paths: Vec::new(),
+            shader_path: String::new(),
             animation_crossfade_seconds: 0.25,
             spring_bone_enabled: true,
             look_at_enabled: true,
@@ -120,6 +123,7 @@ impl AvatarReactionProfile {
         self.model_name = self.model_name.trim().to_string();
         self.model_path = self.model_path.trim().to_string();
         self.animation_path = self.animation_path.trim().to_string();
+        self.shader_path = self.shader_path.trim().to_string();
         let mut animation_paths = Vec::new();
         for path in self.animation_paths {
             let path = path.trim().to_string();
@@ -186,6 +190,19 @@ impl AvatarReactionProfile {
             }
             if !has_extension(path, "vrma") {
                 return Err("character animations must use a .vrma extension".to_string());
+            }
+        }
+        if self.shader_path.chars().count() > MAX_MODEL_PATH_CHARS {
+            return Err(format!(
+                "shader path must be at most {MAX_MODEL_PATH_CHARS} characters"
+            ));
+        }
+        if !self.shader_path.is_empty() {
+            if !has_extension(&self.model_path, "vrm") {
+                return Err("custom WGSL shaders require a .vrm character model".to_string());
+            }
+            if !has_extension(&self.shader_path, "wgsl") {
+                return Err("custom character shader must use a .wgsl extension".to_string());
             }
         }
         if !self.animation_crossfade_seconds.is_finite()
@@ -308,6 +325,23 @@ mod tests {
         };
 
         assert!(profile.validate().is_err());
+    }
+
+    #[test]
+    fn custom_wgsl_shader_requires_a_vrm_model() {
+        let valid = AvatarReactionProfile {
+            model_path: "/tmp/operator-cat.vrm".to_string(),
+            shader_path: "/tmp/operator-cat.wgsl".to_string(),
+            ..AvatarReactionProfile::default()
+        };
+        assert!(valid.validate().is_ok());
+
+        let invalid = AvatarReactionProfile {
+            model_path: "/tmp/operator-cat.png".to_string(),
+            shader_path: "/tmp/operator-cat.wgsl".to_string(),
+            ..AvatarReactionProfile::default()
+        };
+        assert!(invalid.validate().is_err());
     }
 
     #[test]

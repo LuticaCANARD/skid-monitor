@@ -19,6 +19,7 @@ const MODEL_LOAD_POLL_INTERVAL: Duration = Duration::from_millis(50);
 pub(crate) struct AvatarModelCache {
     requested_path: Option<String>,
     requested_animation_paths: Option<Vec<String>>,
+    requested_shader_path: Option<String>,
     asset: Option<AvatarModelAsset>,
     error: Option<String>,
     #[cfg(not(target_arch = "wasm32"))]
@@ -52,6 +53,7 @@ struct AvatarModelLoadRequest {
     generation: u64,
     path: String,
     animation_paths: Vec<String>,
+    shader_path: String,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -75,6 +77,7 @@ impl Default for AvatarModelCache {
         Self {
             requested_path: None,
             requested_animation_paths: None,
+            requested_shader_path: None,
             asset: None,
             error: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -98,11 +101,14 @@ impl AvatarModelCache {
             .map(|path| path.trim().to_string())
             .filter(|path| !path.is_empty())
             .collect::<Vec<_>>();
+        let requested_shader_path = profile.shader_path.trim();
         if self.requested_path.as_deref() != Some(requested_path)
             || self.requested_animation_paths.as_ref() != Some(&requested_animation_paths)
+            || self.requested_shader_path.as_deref() != Some(requested_shader_path)
         {
             self.requested_path = Some(requested_path.to_string());
             self.requested_animation_paths = Some(requested_animation_paths);
+            self.requested_shader_path = Some(requested_shader_path.to_string());
             self.asset = None;
             self.error = None;
             #[cfg(not(target_arch = "wasm32"))]
@@ -190,6 +196,7 @@ impl AvatarModelCache {
             generation: self.generation,
             path: path.to_string(),
             animation_paths: self.requested_animation_paths.clone().unwrap_or_default(),
+            shader_path: self.requested_shader_path.clone().unwrap_or_default(),
         };
         match self.loader.request_tx.send(request) {
             Ok(()) => self.active_generation = Some(self.generation),
@@ -205,6 +212,10 @@ impl AvatarModelCache {
 
     pub(crate) fn requested_path(&self) -> Option<&str> {
         self.requested_path.as_deref()
+    }
+
+    pub(crate) fn requested_shader_path(&self) -> Option<&str> {
+        self.requested_shader_path.as_deref()
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -228,6 +239,7 @@ impl AvatarModelCache {
     pub(crate) fn invalidate(&mut self) {
         self.requested_path = None;
         self.requested_animation_paths = None;
+        self.requested_shader_path = None;
         self.asset = None;
         self.error = None;
         #[cfg(not(target_arch = "wasm32"))]
@@ -270,6 +282,22 @@ impl AvatarModelCache {
             Some(AvatarModelAsset::Image(_)) | None => None,
         }
     }
+
+    pub(crate) fn custom_shader_label(&self) -> Option<&str> {
+        match self.asset.as_ref() {
+            #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+            Some(AvatarModelAsset::Vrm(scene)) => scene.custom_shader_label.as_deref(),
+            Some(AvatarModelAsset::Image(_)) | None => None,
+        }
+    }
+
+    pub(crate) fn custom_shader_error(&self) -> Option<&str> {
+        match self.asset.as_ref() {
+            #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+            Some(AvatarModelAsset::Vrm(scene)) => scene.custom_shader_error.as_deref(),
+            Some(AvatarModelAsset::Image(_)) | None => None,
+        }
+    }
 }
 
 impl AvatarModelImage {
@@ -290,7 +318,12 @@ impl AvatarModelLoader {
         std::thread::spawn(move || {
             while let Ok(request) = request_rx.recv() {
                 let result = std::panic::catch_unwind(|| {
-                    decode_avatar_model(&request.path, &request.animation_paths, request.generation)
+                    decode_avatar_model(
+                        &request.path,
+                        &request.animation_paths,
+                        &request.shader_path,
+                        request.generation,
+                    )
                 })
                 .unwrap_or_else(|_| {
                     Err("character model decoder rejected malformed input".to_string())
@@ -317,12 +350,13 @@ impl AvatarModelLoader {
 fn decode_avatar_model(
     path: &str,
     animation_paths: &[String],
+    shader_path: &str,
     generation: u64,
 ) -> Result<DecodedAvatarModel, String> {
     if has_vrm_extension(path) {
         #[cfg(feature = "high-spec")]
         {
-            return super::vrm::decode(path, animation_paths, generation)
+            return super::vrm::decode(path, animation_paths, shader_path, generation)
                 .map(Box::new)
                 .map(DecodedAvatarModel::Vrm);
         }
@@ -336,8 +370,10 @@ fn decode_avatar_model(
         }
     }
 
-    if !animation_paths.is_empty() {
-        return Err("VRMA animation requires a VRM character model".to_string());
+    if !animation_paths.is_empty() || !shader_path.is_empty() {
+        return Err(
+            "VRMA animation and custom WGSL shaders require a VRM character model".to_string(),
+        );
     }
 
     decode_avatar_image(path)
@@ -527,7 +563,7 @@ mod tests {
     #[cfg(not(feature = "high-spec"))]
     #[test]
     fn low_spec_rejects_vrm_without_touching_the_file() {
-        let result = decode_avatar_model("/path/that/does/not/exist/avatar.vrm", &[], 1);
+        let result = decode_avatar_model("/path/that/does/not/exist/avatar.vrm", &[], "", 1);
 
         let error = match result {
             Ok(_) => panic!("low-spec must not load VRM"),

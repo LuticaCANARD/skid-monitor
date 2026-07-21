@@ -84,7 +84,7 @@ terminal에서 `Ctrl-C`를 누른다.
 | Database log receiver | Experimental | tail, truncate/rotation, partial/oversized line tests |
 | PostgreSQL/OIDC Cloud mode | Experimental | split ingress/API, cursor replay, tenant RLS; 외부 DB 필요 |
 | Edge collection | Prototype | compact wire adapter와 deterministic mock sender만 구현 |
-| Alert/character presenter | Prototype | 고정 rule, 사용자 PNG/JPEG와 상태별 action; native high-spec은 VRM 0.x/1.0, MToon 전용 map, expression/SpringBone/lookAt/constraint, 다중 VRMA crossfade |
+| Alert/character presenter | Prototype | 고정 rule, 사용자 PNG/JPEG와 상태별 action; native high-spec은 VRM 0.x/1.0, MToon 전용 map, expression/SpringBone/lookAt/constraint, 다중 VRMA crossfade와 검증된 custom WGSL material hook |
 | File transfer | Planned | root availability/count/bytes metadata만 전송 |
 | Compute routing | Prototype | logical CPU와 placeholder score만 전송; 실행 기능 없음 |
 | Windows sampler / Quantum adapter | Planned | RFC·enum 수준이며 runtime adapter 없음 |

@@ -301,6 +301,9 @@ pub(in crate::components::avatar) struct CpuVrmScene {
     pub(super) constraints: Vec<CpuNodeConstraint>,
     pub(super) springs: Vec<CpuSpring>,
     pub(super) colliders: Vec<CpuCollider>,
+    pub(super) custom_shader_source: Option<std::sync::Arc<str>>,
+    pub(in crate::components::avatar) custom_shader_label: Option<String>,
+    pub(in crate::components::avatar) custom_shader_error: Option<String>,
 }
 
 pub(super) struct CpuVrmFrame {
@@ -389,6 +392,7 @@ impl CpuVrmScene {
 pub(super) fn decode(
     path: &str,
     animation_paths: &[String],
+    shader_path: &str,
     scene_id: u64,
 ) -> Result<CpuVrmScene, String> {
     let metadata = std::fs::metadata(path)
@@ -413,7 +417,17 @@ pub(super) fn decode(
         ));
     }
 
-    decode_bytes(&bytes, animation_paths, scene_id)
+    let mut scene = decode_bytes(&bytes, animation_paths, scene_id)?;
+    if !shader_path.is_empty() {
+        match super::custom_shader::load(shader_path) {
+            Ok(shader) => {
+                scene.custom_shader_source = Some(shader.source);
+                scene.custom_shader_label = Some(shader.label);
+            }
+            Err(error) => scene.custom_shader_error = Some(error),
+        }
+    }
+    Ok(scene)
 }
 
 fn decode_bytes(
@@ -3099,6 +3113,9 @@ fn build_scene(input: SceneBuildInput<'_>) -> Result<CpuVrmScene, String> {
         constraints,
         springs,
         colliders,
+        custom_shader_source: None,
+        custom_shader_label: None,
+        custom_shader_error: None,
     })
 }
 

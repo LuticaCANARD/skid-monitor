@@ -11,6 +11,8 @@ impl UiSettings {
         avatar_profile_save_pending: bool,
         avatar_model_path: Option<&str>,
         avatar_model_error: Option<&str>,
+        avatar_shader_path: Option<&str>,
+        avatar_shader_error: Option<&str>,
     ) -> SettingsChanges {
         let mut changes = SettingsChanges::default();
         let mut window_open = *open;
@@ -30,6 +32,8 @@ impl UiSettings {
                                 ui,
                                 avatar_model_path,
                                 avatar_model_error,
+                                avatar_shader_path,
+                                avatar_shader_error,
                                 &mut changes,
                             );
                         });
@@ -51,6 +55,8 @@ impl UiSettings {
         ui: &mut egui::Ui,
         avatar_model_path: Option<&str>,
         avatar_model_error: Option<&str>,
+        avatar_shader_path: Option<&str>,
+        avatar_shader_error: Option<&str>,
         changes: &mut SettingsChanges,
     ) {
         ui.label(RichText::new("Character reactions").strong());
@@ -151,6 +157,36 @@ impl UiSettings {
             )
             .small(),
         );
+
+        ui.label("Optional custom WGSL material shader");
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut self.avatar_draft.shader_path)
+                    .desired_width(360.0)
+                    .hint_text("path to a .wgsl material hook"),
+            );
+            if ui.button("Clear shader").clicked() {
+                self.avatar_draft.shader_path.clear();
+            }
+        });
+        #[cfg(all(not(target_arch = "wasm32"), feature = "high-spec"))]
+        ui.label(
+            RichText::new(
+                "Drop a .wgsl file or enter its path. It must implement the bounded skid_custom_material hook; invalid shaders fall back to built-in MToon.",
+            )
+            .small(),
+        );
+        #[cfg(any(target_arch = "wasm32", not(feature = "high-spec")))]
+        ui.label(
+            RichText::new("Custom WGSL character shaders require the native high-spec build.")
+                .small(),
+        );
+        if let Some(error) = avatar_shader_error.filter(|_| {
+            avatar_shader_path == Some(self.avatar_draft.shader_path.trim())
+                && !self.avatar_draft.shader_path.trim().is_empty()
+        }) {
+            ui.label(RichText::new(error).color(config::STATUS_ERROR_COLOR));
+        }
 
         ui.add_space(config::SECTION_GAP);
         show_action_editor(ui, "idle", "Healthy", &mut self.avatar_draft.idle);

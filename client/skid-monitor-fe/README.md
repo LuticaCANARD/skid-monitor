@@ -63,8 +63,8 @@ SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 Open **Character** to configure the character shown for a selected server node.
 
 - Set a character name and, in the native client, an optional `.png`, `.jpg`,
-  `.jpeg`, or `.vrm` model path. A VRM can also use an optional `.vrma` animation
-  path. You can drop either file onto the native window and then apply the
+  `.jpeg`, or `.vrm` model path. A VRM can also use up to eight `.vrma` animation
+  paths and one optional `.wgsl` material hook. You can drop these files onto the native window and then apply the
   draft. An empty model path uses the built-in character.
 - Configure the `idle`, `warning`, and `critical` actions independently.
 - Each action selects one bounded UI motion: `Still`, `Pulse`, `Bounce`, or
@@ -106,7 +106,21 @@ LINEAR, and CUBICSPLINE node TRS channels, VRMA humanoid rotations, and hips
 translation. Per-state expression names are configurable and missing names are
 a safe no-op. Material-color/texture-transform expression binds, MToon
 shading-shift/UV-animation mask textures, alert-state clip selection, root-motion
-policy, and arbitrary scripts are not implemented.
+policy and arbitrary scripts are not implemented.
+
+### Custom WGSL material hook
+
+Native `high-spec` users can select a `.wgsl` file that implements the stable
+`skid_custom_material` function shown in
+[`examples/custom-material.wgsl`](examples/custom-material.wgsl). The hook receives
+the built-in MToon result, surface normal, UV, world position, and elapsed time,
+and returns the final linear RGBA color. It cannot replace renderer bindings,
+vertex skinning, depth policy, or entry points.
+
+Custom shader files are limited to 64 KiB. They must be UTF-8 WGSL, cannot add
+global resources, entry points, or loops, and must pass Naga parse and validation
+both alone and after composition with the built-in renderer. A missing or invalid
+file keeps the VRM on the built-in MToon shader and reports the reason in the UI.
 VRM 1.0 requires valid `name`, non-empty `authors`, `licenseUrl`, and required
 humanoid bone bindings; the legacy 0.0 extension uses its own required bone set.
 External buffer/image URIs and unsupported required glTF extensions are rejected. See

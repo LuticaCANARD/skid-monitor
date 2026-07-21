@@ -113,6 +113,20 @@ pub(crate) fn show(
                             .color(ui.visuals().weak_text_color()),
                     );
                 }
+                if let Some(shader) = model.custom_shader_label() {
+                    ui.label(
+                        RichText::new(format!("+ {shader}"))
+                            .small()
+                            .color(ui.visuals().weak_text_color()),
+                    );
+                } else if let Some(error) = model.custom_shader_error() {
+                    ui.label(
+                        RichText::new("+ default shader")
+                            .small()
+                            .color(input.state.accent()),
+                    )
+                    .on_hover_text(error);
+                }
             }
             ui.add(egui::Label::new(&input.model_name).truncate())
                 .on_hover_text(&input.model_name);

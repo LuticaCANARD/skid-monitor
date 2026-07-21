@@ -126,6 +126,11 @@ impl UiSettings {
                 self.avatar_profile_error = None;
             }
         }
+        if let Some(path) = dropped_asset_path(ctx, "wgsl") {
+            self.avatar_draft.shader_path = path;
+            self.avatar_profile_error = None;
+            loaded_character_asset = true;
+        }
         if loaded_character_asset {
             return;
         }

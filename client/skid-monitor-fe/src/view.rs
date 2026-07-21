@@ -247,6 +247,8 @@ impl<'a> ControlRoomView<'a> {
             self.state.avatar_profile_save_pending(),
             self.ui_state.avatar_model.requested_path(),
             self.ui_state.avatar_model.error(),
+            self.ui_state.avatar_model.requested_shader_path(),
+            self.ui_state.avatar_model.custom_shader_error(),
         );
         self.apply_settings_changes(ctx, changes);
     }

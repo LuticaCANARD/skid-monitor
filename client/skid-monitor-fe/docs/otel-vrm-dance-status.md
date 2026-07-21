@@ -31,6 +31,7 @@ skeletal clip sequence 자체는 alert state와 무관하며 material/texture-tr
 | MToon | 부분 구현 | 1.0/legacy의 shade/shift/toony, GI 근사, rim/matcap, emission factor, outline, UV scroll/rotation, transparent Z-write/render queue와 shade/normal/matcap/rim/outline-width 전용 texture를 반영한다. shading-shift 및 UV-animation mask texture는 미지원이다. |
 | VRM runtime | 부분 구현 | VRM 0.x/1.0 expression morph와 자동 blink, bone/expression pointer lookAt, VRMC roll/aim/rotation constraint, SpringBone sphere/capsule/center를 실행한다. material/texture-transform expression bind는 없다. |
 | VRMA/skeletal animation | 부분 구현 | GPU skinning, 모든 embedded glTF clip과 최대 8개 외부 VRMA 파일의 clip FK 리타기팅, STEP/LINEAR/CUBICSPLINE 반복·crossfade를 지원한다. alert-state clip 선택과 root-motion policy는 없다. |
+| custom WGSL material | 구현됨 | native high-spec에서 64 KiB 이하 `.wgsl`의 `skid_custom_material` hook을 고정 MToon ABI에 합성한다. global resource/entry point/loop를 거부하고 Naga 검증 실패 시 기본 MToon으로 fallback한다. |
 | 알람 -> character 상태 변환 | 구현됨 | 선택 Agent의 최고 fixed severity를 idle/warning/critical action에 매핑한다. custom threshold rule은 없다. |
 | Unity/VRM bridge 경로 | 부분 구현 | Rust client가 .NET extension host로 raw `Signal` JSON을 전달할 수 있다. |
 
@@ -86,7 +87,7 @@ severity를 계산하면 reaction profile이 다음 중 하나를 고른다.
 sprite 또는 VRM viewport를 안전하게 이동하거나 크기 변화시키는 bounded UI effect다. skeletal clip
 선택과는 별도이며, 설정한 VRMA/embedded clip sequence는 현재 alert 상태와 무관하게 반복 재생한다.
 
-- native frontend: `.png`, `.jpg`, `.jpeg`, `.vrm` model path와 최대 8개의 optional `.vrma` path를 선택할
+- native frontend: `.png`, `.jpg`, `.jpeg`, `.vrm` model path와 최대 8개의 optional `.vrma` path 및 `.wgsl` material hook을 선택할
   수 있고 profile은 SQLite write ACK 이후 적용한다. model/animation decode는 크기를 제한한 단일
   background loader에서 직렬 처리한다.
 - native `high-spec`: `.vrm`을 GLB로 파싱한다. VRM 1.0은 필수 `meta.name`/`authors`/`licenseUrl`과
@@ -114,13 +115,18 @@ cargo run -p skid-monitor-fe --no-default-features --features high-spec
 cargo test -p skid-monitor-fe --lib --no-default-features --features high-spec
 ```
 
-`Settings > Character reactions`에서 `.vrm`과 optional `.vrma` path 목록을 입력하거나 native window에
+`Character` 창에서 `.vrm`, optional `.vrma` path 목록과 `.wgsl` material hook을 입력하거나 native window에
 파일을 drop한 뒤 `Apply & preview character`를 누른다. 저장이 시작되면 별도 `Character preview`가 즉시
 열리고, 로딩 중 표시를 거쳐 VRM version과 3D viewport를 보여준다. 저장된 custom model이 있으면 다음
 앱 실행 때도 preview를 자동으로 연다. loader는 VRM 128 MiB, VRMA 파일당 64 MiB로 제한하고,
 node/primitive/triangle/texture/keyframe 및 decoded texture allocation에도 상한을 둔다. CPU parsing은
 기존 single background loader에서 실행하고, GPU resource 생성과 pose buffer 갱신은 egui WGPU callback의
 prepare 단계에서만 수행한다. stale generation은 설치하지 않는다.
+
+custom shader는 [예제](../examples/custom-material.wgsl)의 `skid_custom_material` 함수만 제공한다.
+기본 MToon의 linear RGBA, normal, UV, world position, time을 받아 최종 linear RGBA를 반환한다. loader는
+64 KiB/UTF-8 제한, global variable/resource, entry point와 loop 금지, 독립 및 합성 Naga validation을
+검사한다. 실패한 custom shader는 모델 로딩을 취소하지 않고 기본 MToon을 유지하며 UI에 오류를 표시한다.
 
 MToon 1.0과 legacy MToon에서 shade color, shading shift/toony, GI equalization 근사, parametric rim,
 matcap, emission factor, inverse-hull outline, UV scroll/rotation, transparent Z-write와 render queue offset을
