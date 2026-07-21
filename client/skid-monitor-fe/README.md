@@ -13,10 +13,11 @@ sparkline trends without an extra plotting dependency.
 SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-fe
 ```
 
-The frontend defaults to the `low-spec` feature, which keeps the existing glow
-renderer and Linux software GL fallback. The Character panel and its 2D
-reactions are available in both `low-spec` and `high-spec`; `high-spec` adds the
-native WGPU VRM viewport described below. For the higher-spec renderer:
+The frontend defaults to the `low-spec` feature, which uses the glow renderer
+and lets Mesa select an available hardware GPU by default. The Character panel
+and its 2D reactions are available in both `low-spec` and `high-spec`;
+`high-spec` adds the native WGPU VRM viewport described below. For the
+higher-spec renderer:
 
 ```sh
 cargo run -p skid-monitor-fe --features high-spec
@@ -29,16 +30,21 @@ cargo run -p skid-monitor-fe --no-default-features --features high-spec
 cargo test -p skid-monitor-fe --lib --no-default-features --features high-spec
 ```
 
-Linux에서는 Mesa/Zink/Vulkan driver 상태에 따라 `failed to choose pdev` 같은 렌더러 초기화 오류가
-날 수 있다. 이 frontend는 control-room UI라 기본값으로 software Mesa GL(`llvmpipe`)을 사용한다.
-또한 Wayland compositor 연결이 끊기며 `Broken pipe` / `WinitEventLoop(ExitFailure(1))`가 나는
-환경을 피하기 위해, `DISPLAY`가 있으면 기본값으로 X11/XWayland backend를 사용한다.
-
-GPU 경로를 강제로 쓰고 싶을 때만 다음처럼 실행한다.
+Linux에서는 기본 `auto` 모드가 사용 가능한 hardware GPU를 우선 사용한다. Mesa/Zink/Vulkan driver
+상태에 따라 `failed to choose pdev` 같은 렌더러 초기화 오류가 발생하면 software Mesa
+GL(`llvmpipe`) 모드로 명시해서 실행할 수 있다.
 
 ```sh
-SKID_MONITOR_FE_USE_GPU=1 cargo run -p skid-monitor-fe
+# 기본값: hardware GPU 우선, 불가능하면 Mesa가 사용 가능한 renderer 선택
+SKID_MONITOR_FE_RENDER_MODE=auto cargo run -p skid-monitor-fe
+
+# 명시적 software fallback
+SKID_MONITOR_FE_RENDER_MODE=software cargo run -p skid-monitor-fe
 ```
+
+기존 `SKID_MONITOR_FE_USE_GPU=1`은 호환성을 위해 계속 허용되지만 이제 기본 `auto` 모드와 같다.
+또한 Wayland compositor 연결이 끊기며 `Broken pipe` / `WinitEventLoop(ExitFailure(1))`가 나는
+환경을 피하기 위해, `DISPLAY`가 있으면 기본값으로 X11/XWayland backend를 사용한다.
 
 Wayland backend를 강제로 쓰고 싶을 때만 다음처럼 실행한다.
 
@@ -54,8 +60,7 @@ SKID_MONITOR_CLIENT_ADDR=127.0.0.1:9000 cargo run -p skid-monitor-agent
 
 ## Configurable character and VRM
 
-Open **Settings > Character reactions** to configure the character shown for a
-selected server node.
+Open **Character** to configure the character shown for a selected server node.
 
 - Set a character name and, in the native client, an optional `.png`, `.jpg`,
   `.jpeg`, or `.vrm` model path. A VRM can also use an optional `.vrma` animation

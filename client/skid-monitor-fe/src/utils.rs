@@ -3,13 +3,21 @@ use std::collections::VecDeque;
 use web_time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LinuxRenderMode {
+    Auto,
+    Software,
+}
+
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) fn stabilize_linux_graphics_env() {
     // Set before eframe/glutin starts any graphics threads.
     unsafe {
-        if !matches!(
-            std::env::var(config::USE_GPU_ENV).as_deref(),
-            Ok(config::ENABLED_ENV_VALUE)
-        ) {
+        let render_mode = linux_render_mode(
+            std::env::var(config::RENDER_MODE_ENV).ok().as_deref(),
+            std::env::var(config::USE_GPU_ENV).ok().as_deref(),
+        );
+        if render_mode == LinuxRenderMode::Software {
             std::env::set_var(config::LIBGL_ALWAYS_SOFTWARE_ENV, config::SOFTWARE_GL_VALUE);
             std::env::set_var(
                 config::MESA_LOADER_DRIVER_OVERRIDE_ENV,
@@ -27,6 +35,18 @@ pub(crate) fn stabilize_linux_graphics_env() {
             std::env::remove_var(config::WAYLAND_DISPLAY_ENV);
             std::env::remove_var(config::WAYLAND_SOCKET_ENV);
         }
+    }
+}
+
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
+fn linux_render_mode(mode: Option<&str>, legacy_gpu: Option<&str>) -> LinuxRenderMode {
+    match mode.map(str::trim) {
+        Some(mode) if mode.eq_ignore_ascii_case(config::RENDER_MODE_SOFTWARE) => {
+            LinuxRenderMode::Software
+        }
+        Some(_) => LinuxRenderMode::Auto,
+        None if matches!(legacy_gpu, Some("0")) => LinuxRenderMode::Software,
+        None => LinuxRenderMode::Auto,
     }
 }
 

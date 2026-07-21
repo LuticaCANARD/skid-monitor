@@ -17,7 +17,9 @@ use std::collections::{BTreeMap, VecDeque};
 struct PanelFlex {
     split: Option<[f32; 2]>,
     graph_stack: Option<[f32; 3]>,
+    graph_stack_without_database: Option<[f32; 2]>,
     full_stack: Option<[f32; 4]>,
+    full_stack_without_database: Option<[f32; 3]>,
 }
 
 pub(crate) struct MainPanelData<'a> {
@@ -52,6 +54,10 @@ impl<'a> MainPanelData<'a> {
             alerts,
             character,
         }
+    }
+
+    pub(crate) fn has_database_metrics(&self) -> bool {
+        self.metrics.iter().any(|sample| sample.is_database())
     }
 }
 
@@ -152,12 +158,19 @@ const STACKED_PANELS: [MainPanel; 4] = [
     MainPanel::Trends,
     MainPanel::Metrics,
 ];
+const STACKED_PANELS_WITHOUT_DATABASE: [MainPanel; 3] =
+    [MainPanel::Nodes, MainPanel::Trends, MainPanel::Metrics];
 const GRAPH_PANELS: [MainPanel; 3] = [MainPanel::Nodes, MainPanel::Database, MainPanel::Trends];
+const GRAPH_PANELS_WITHOUT_DATABASE: [MainPanel; 2] = [MainPanel::Nodes, MainPanel::Trends];
 
-pub(crate) fn minimum_height(layout: LayoutMode, gap: f32) -> f32 {
-    let panels = match layout {
-        LayoutMode::Split => GRAPH_PANELS.as_slice(),
-        LayoutMode::Stacked | LayoutMode::Compact => STACKED_PANELS.as_slice(),
+pub(crate) fn minimum_height(layout: LayoutMode, gap: f32, has_database_metrics: bool) -> f32 {
+    let panels = match (layout, has_database_metrics) {
+        (LayoutMode::Split, true) => GRAPH_PANELS.as_slice(),
+        (LayoutMode::Split, false) => GRAPH_PANELS_WITHOUT_DATABASE.as_slice(),
+        (LayoutMode::Stacked | LayoutMode::Compact, true) => STACKED_PANELS.as_slice(),
+        (LayoutMode::Stacked | LayoutMode::Compact, false) => {
+            STACKED_PANELS_WITHOUT_DATABASE.as_slice()
+        }
     };
     let stacked_height = panels
         .iter()
@@ -184,21 +197,44 @@ pub(crate) fn show(
     let mut flex = ui
         .ctx()
         .data_mut(|data| data.get_temp::<PanelFlex>(flex_id).unwrap_or_default());
+    let has_database_metrics = data.has_database_metrics();
 
     match layout {
-        LayoutMode::Split => split(ui, compact, panel_width, limits, &data, &mut flex),
+        LayoutMode::Split => split(
+            ui,
+            compact,
+            panel_width,
+            limits,
+            &data,
+            &mut flex,
+            has_database_metrics,
+        ),
         LayoutMode::Stacked | LayoutMode::Compact => {
-            let initial = panel_heights(limits, &STACKED_PANELS);
-            let weights = flex.full_stack.get_or_insert(initial);
-            stack(
-                ui,
-                compact,
-                panel_width,
-                limits.main_height,
-                &data,
-                &STACKED_PANELS,
-                weights,
-            );
+            if has_database_metrics {
+                let initial = panel_heights(limits, &STACKED_PANELS);
+                let weights = flex.full_stack.get_or_insert(initial);
+                stack(
+                    ui,
+                    compact,
+                    panel_width,
+                    limits.main_height,
+                    &data,
+                    &STACKED_PANELS,
+                    weights,
+                );
+            } else {
+                let initial = panel_heights(limits, &STACKED_PANELS_WITHOUT_DATABASE);
+                let weights = flex.full_stack_without_database.get_or_insert(initial);
+                stack(
+                    ui,
+                    compact,
+                    panel_width,
+                    limits.main_height,
+                    &data,
+                    &STACKED_PANELS_WITHOUT_DATABASE,
+                    weights,
+                );
+            }
         }
     }
 
@@ -212,6 +248,7 @@ fn split(
     limits: PanelLimits,
     data: &MainPanelData<'_>,
     flex: &mut PanelFlex,
+    has_database_metrics: bool,
 ) {
     let handle_width = ui.spacing().item_spacing.x;
     let content_spacing_x = ui.spacing().item_spacing.x;
@@ -235,17 +272,31 @@ fn split(
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.x = content_spacing_x;
             ui.set_width(widths[0]);
-            let initial = panel_heights(limits, &GRAPH_PANELS);
-            let weights = flex.graph_stack.get_or_insert(initial);
-            stack(
-                ui,
-                compact,
-                widths[0],
-                limits.main_height,
-                data,
-                &GRAPH_PANELS,
-                weights,
-            );
+            if has_database_metrics {
+                let initial = panel_heights(limits, &GRAPH_PANELS);
+                let weights = flex.graph_stack.get_or_insert(initial);
+                stack(
+                    ui,
+                    compact,
+                    widths[0],
+                    limits.main_height,
+                    data,
+                    &GRAPH_PANELS,
+                    weights,
+                );
+            } else {
+                let initial = panel_heights(limits, &GRAPH_PANELS_WITHOUT_DATABASE);
+                let weights = flex.graph_stack_without_database.get_or_insert(initial);
+                stack(
+                    ui,
+                    compact,
+                    widths[0],
+                    limits.main_height,
+                    data,
+                    &GRAPH_PANELS_WITHOUT_DATABASE,
+                    weights,
+                );
+            }
         });
         let delta = resize_handle(ui, egui::vec2(handle_width, limits.main_height), true);
         ui.vertical(|ui| {
@@ -497,11 +548,22 @@ mod tests {
         let gap = 20.0;
 
         assert_close(
-            minimum_height(LayoutMode::Split, gap),
+            minimum_height(LayoutMode::Split, gap, true),
             config::SOURCES_HEIGHT_MIN
                 + config::DATABASE_METRICS_HEIGHT_MIN
                 + config::TRENDS_PANEL_HEIGHT_MIN
                 + gap * 2.0,
+        );
+    }
+
+    #[test]
+    fn split_minimum_height_omits_database_panel_when_no_database_metrics_exist() {
+        let gap = 20.0;
+
+        assert_close(
+            minimum_height(LayoutMode::Split, gap, false),
+            (config::SOURCES_HEIGHT_MIN + config::TRENDS_PANEL_HEIGHT_MIN + gap)
+                .max(config::METRICS_TABLE_HEIGHT_MIN),
         );
     }
 }

@@ -6,13 +6,21 @@ use crate::model::{AlertSummary, OperationalSummary, Status};
 use crate::platform::STORAGE_TOOLTIP;
 use eframe::egui::{self, Color32, RichText};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum HeaderAction {
+    #[default]
+    None,
+    OpenCharacter,
+    OpenSettings,
+}
+
 pub(crate) fn show(
     ui: &mut egui::Ui,
     compact: bool,
     status: &Status,
     alert_summary: AlertSummary,
     operational_summary: OperationalSummary,
-) -> bool {
+) -> HeaderAction {
     if compact {
         show_compact(ui, status, alert_summary, operational_summary)
     } else {
@@ -25,8 +33,8 @@ fn show_wide(
     status: &Status,
     alert_summary: AlertSummary,
     operational_summary: OperationalSummary,
-) -> bool {
-    let mut settings_clicked = false;
+) -> HeaderAction {
+    let mut action = HeaderAction::None;
     let available_width = ui.available_width().max(1.0);
     let header_height = (config::APP_TITLE_SIZE
         + config::APP_SUBTITLE_SIZE
@@ -41,7 +49,13 @@ fn show_wide(
     let gap = ui.spacing().item_spacing.x;
     let status_width = status_badge_width(ui, status);
     let alert_width = alert_badge_width(ui, alert_summary);
-    let badge_width = status_width + gap + alert_width + gap + config::SETTINGS_BUTTON_WIDTH;
+    let badge_width = status_width
+        + gap
+        + alert_width
+        + gap
+        + config::CHARACTER_BUTTON_WIDTH
+        + gap
+        + config::SETTINGS_BUTTON_WIDTH;
     let status_rect = egui::Rect::from_min_size(
         egui::pos2((rect.right() - badge_width).max(rect.left()), rect.top()),
         egui::vec2(badge_width, header_height),
@@ -71,6 +85,18 @@ fn show_wide(
     if status_ui
         .add_sized(
             [
+                config::CHARACTER_BUTTON_WIDTH,
+                status_ui.spacing().interact_size.y,
+            ],
+            egui::Button::new("Character"),
+        )
+        .clicked()
+    {
+        action = HeaderAction::OpenCharacter;
+    }
+    if status_ui
+        .add_sized(
+            [
                 config::SETTINGS_BUTTON_WIDTH,
                 status_ui.spacing().interact_size.y,
             ],
@@ -78,10 +104,10 @@ fn show_wide(
         )
         .clicked()
     {
-        settings_clicked = true;
+        action = HeaderAction::OpenSettings;
     }
 
-    settings_clicked
+    action
 }
 
 fn show_compact(
@@ -89,17 +115,23 @@ fn show_compact(
     status: &Status,
     alert_summary: AlertSummary,
     operational_summary: OperationalSummary,
-) -> bool {
-    let mut settings_clicked = false;
+) -> HeaderAction {
+    let mut action = HeaderAction::None;
+    title(ui, operational_summary);
+    ui.add_space(config::HEADER_SUMMARY_GAP);
     ui.horizontal_wrapped(|ui| {
-        title(ui, operational_summary);
         status_badge(ui, status);
         alert_badge(ui, alert_summary);
+    });
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("Character").clicked() {
+            action = HeaderAction::OpenCharacter;
+        }
         if ui.button("Settings").clicked() {
-            settings_clicked = true;
+            action = HeaderAction::OpenSettings;
         }
     });
-    settings_clicked
+    action
 }
 
 fn title(ui: &mut egui::Ui, summary: OperationalSummary) {

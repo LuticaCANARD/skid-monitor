@@ -14,6 +14,10 @@ pub(crate) const WINDOW_MIN_SIZE: [f32; 2] = [280.0, 640.0];
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const USE_GPU_ENV: &str = "SKID_MONITOR_FE_USE_GPU";
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
+pub(crate) const RENDER_MODE_ENV: &str = "SKID_MONITOR_FE_RENDER_MODE";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
+pub(crate) const RENDER_MODE_SOFTWARE: &str = "software";
+#[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const USE_WAYLAND_ENV: &str = "SKID_MONITOR_FE_USE_WAYLAND";
 #[cfg(all(target_os = "linux", not(feature = "high-spec")))]
 pub(crate) const ENABLED_ENV_VALUE: &str = "1";
@@ -144,6 +148,7 @@ pub(crate) const ALERT_BADGE_BORDER_WIDTH: f32 = 1.0;
 pub(crate) const ALERT_BADGE_RADIUS: u8 = 6;
 pub(crate) const ALERT_BADGE_MARGIN_X: i8 = 10;
 pub(crate) const ALERT_BADGE_MARGIN_Y: i8 = 5;
+pub(crate) const CHARACTER_BUTTON_WIDTH: f32 = 104.0;
 pub(crate) const SETTINGS_BUTTON_WIDTH: f32 = 88.0;
 pub(crate) const SUMMARY_CHIP_BACKGROUND: Color32 = Color32::from_rgb(21, 26, 35);
 pub(crate) const SUMMARY_CHIP_BORDER_WIDTH: f32 = 1.0;

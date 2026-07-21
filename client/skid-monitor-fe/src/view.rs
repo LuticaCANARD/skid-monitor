@@ -1,6 +1,7 @@
 use crate::components::{
     avatar::{self, AvatarModelCache},
     counters, header,
+    header::HeaderAction,
     layout::{
         ContentLayout, LayoutMode, PanelLimits, centered_content, remaining_height, section_gap,
     },
@@ -20,6 +21,7 @@ pub(crate) struct ControlRoomUiState {
     selected_node_key: Option<String>,
     overview: OverviewState,
     settings_open: bool,
+    character_settings_open: bool,
     character_preview_open: bool,
     show_avatar: bool,
     settings: UiSettings,
@@ -44,6 +46,7 @@ impl ControlRoomUiState {
             selected_node_key: None,
             overview: OverviewState::default(),
             settings_open: false,
+            character_settings_open: false,
             character_preview_open,
             show_avatar: false,
             settings,
@@ -99,14 +102,20 @@ impl<'a> ControlRoomView<'a> {
                             let layout = LayoutMode::for_width(panel_width);
                             let compact = layout.is_compact();
 
-                            if header::show(
+                            match header::show(
                                 ui,
                                 compact,
                                 self.state.status(),
                                 self.state.alert_summary(),
                                 self.state.operational_summary(),
                             ) {
-                                self.ui_state.settings_open = true;
+                                HeaderAction::OpenCharacter => {
+                                    self.ui_state.character_settings_open = true;
+                                }
+                                HeaderAction::OpenSettings => {
+                                    self.ui_state.settings_open = true;
+                                }
+                                HeaderAction::None => {}
                             }
                             ui.add_space(config::HEADER_COUNTER_GAP);
                             counters::show(ui, self.state.counters());
@@ -159,6 +168,9 @@ impl<'a> ControlRoomView<'a> {
 
         if self.ui_state.settings_open {
             self.show_settings_window(ui.ctx());
+        }
+        if self.ui_state.character_settings_open {
+            self.show_character_settings_window(ui.ctx());
         }
         if self.ui_state.character_preview_open {
             self.show_character_preview(ui.ctx());
@@ -224,10 +236,26 @@ impl<'a> ControlRoomView<'a> {
             ctx,
             &mut self.ui_state.settings_open,
             alerts_enabled,
+        );
+        self.apply_settings_changes(ctx, changes);
+    }
+
+    fn show_character_settings_window(&mut self, ctx: &egui::Context) {
+        let changes = self.ui_state.settings.show_character_window(
+            ctx,
+            &mut self.ui_state.character_settings_open,
             self.state.avatar_profile_save_pending(),
             self.ui_state.avatar_model.requested_path(),
             self.ui_state.avatar_model.error(),
         );
+        self.apply_settings_changes(ctx, changes);
+    }
+
+    fn apply_settings_changes(
+        &mut self,
+        ctx: &egui::Context,
+        changes: crate::ui_settings::SettingsChanges,
+    ) {
         if let Some(enabled) = changes.alerts_enabled {
             self.state.set_alerts_enabled(enabled);
         }
