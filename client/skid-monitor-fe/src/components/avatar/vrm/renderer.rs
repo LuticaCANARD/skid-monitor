@@ -119,6 +119,15 @@ pub(super) fn install(cc: &eframe::CreationContext<'_>) -> bool {
     let Some(render_state) = cc.wgpu_render_state.as_ref() else {
         return false;
     };
+    // wgpu panics on uncaptured device errors by default. A validated custom shader or a
+    // VRM model that Naga accepts but the active backend rejects at pipeline-creation time
+    // must not take the whole dashboard down with it, so replace the fatal default with a
+    // logged, non-fatal handler (RFC 0003 fallback policy).
+    render_state
+        .device
+        .on_uncaptured_error(Arc::new(|error: wgpu::Error| {
+            log::error!("VRM renderer WGPU error ignored to keep the dashboard running: {error}");
+        }));
     let resources = VrmRenderResources::new(&render_state.device, render_state.target_format);
     render_state
         .renderer
